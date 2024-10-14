@@ -37,9 +37,9 @@ class MinifyChecker(
    * source code string while preserving the same Ast structure. So, we need to
    * check the structural equivalence ASTs of the code and the minified code.
    *
-   * It would be appropriate to ignore the differences in the name of the variables.
-   * (or it would be perfect if we first rename all the variables of ast1 and ast2 and
-   * then compare them)
+   * It would be appropriate to ignore the differences in the name of the
+   * variables (i.e., the value of literals). (or it would be perfect if we
+   * first rename all the variables of ast1 and ast2 and then compare them)
    */
   private def checkAstDiff(ast1: Ast, ast2: Ast): List[Ast] =
     checkAstDiffSuppl(ast1, ast2, Nil)
