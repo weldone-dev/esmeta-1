@@ -41,7 +41,7 @@ class MinifyChecker(
    * (or it would be perfect if we first rename all the variables of ast1 and ast2 and
    * then compare them)
    */
-  def checkAstDiff(ast1: Ast, ast2: Ast): List[Ast] =
+  private def checkAstDiff(ast1: Ast, ast2: Ast): List[Ast] =
     checkAstDiffSuppl(ast1, ast2, Nil)
 
   /* Recursive helper function for checkAstDiff using Myers algorithm */
