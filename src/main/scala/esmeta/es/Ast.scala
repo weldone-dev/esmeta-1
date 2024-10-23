@@ -69,6 +69,16 @@ sealed trait Ast extends ESElem with Locational {
     ) + "ParseNode"
 
   /** flatten statements */
+  def flattenSyntactic: List[Ast] = this match
+    case Syntactic(_, _, _, children) =>
+      this :: (
+        for {
+          child <- children if child.isDefined
+          ast <- child.get.flattenSyntactic
+        } yield ast
+      ).toList
+    case lex: Lexical => List(lex)
+
   // TODO refactoring
   def flattenStmt: List[Ast] = this match
     case Syntactic("Script", _, 0, Vector(Some(body))) =>

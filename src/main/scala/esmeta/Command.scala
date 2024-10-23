@@ -241,6 +241,15 @@ case object CmdCoverageInvestigate
   )
 }
 
+/** `minify-check` command */
+case object CmdMinifyCheck
+  extends Command("minify-check", CmdExtract >> MinifyCheck) {
+  val help = "check differences of ast between original and minified code."
+  val examples = List(
+    "esmeta minify-check a.js -minify-check:out=out",
+  )
+}
+
 // -----------------------------------------------------------------------------
 // ECMAScript Static Analysis (Meta-Level Static Analysis)
 // -----------------------------------------------------------------------------

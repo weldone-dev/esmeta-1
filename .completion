@@ -11,7 +11,7 @@ _esmeta_completions() {
   local cur prev opts lastc informats outformats datafiles
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  cmdList="help extract compile build-cfg tycheck parse eval web test262-test inject inject-tracer inject-minify mutate fuzz minify-fuzz delta-debug coverage-investigate analyze"
+  cmdList="help extract compile build-cfg tycheck parse eval web test262-test inject inject-tracer inject-minify mutate fuzz minify-fuzz delta-debug coverage-investigate minify-check analyze"
   globalOpt="-silent -error -status -time -test262dir"
   helpOpt=""
   extractOpt="-extract:target -extract:log -extract:eval -extract:repl"
@@ -26,6 +26,7 @@ _esmeta_completions() {
   mutateOpt="-mutate:out -mutate:mutator -mutate:untilValid"
   fuzzOpt="-fuzz:log -fuzz:log-interval -fuzz:out -fuzz:debug -fuzz:timeout -fuzz:trial -fuzz:duration -fuzz:seed -fuzz:cp -fuzz:k-fs -fuzz:init"
   coverageinvestigateOpt="-coverage-investigate:out"
+  minifycheckOpt="-minify-check:out"
   analyzeOpt="-analyze:repl"
   # completion for commands
   case "${COMP_CWORD}" in
@@ -105,6 +106,10 @@ _esmeta_completions() {
           ;;
         coverage-investigate)
           COMPREPLY=($(compgen -W "${globalOpt} ${extractOpt} ${compileOpt} ${buildcfgOpt} ${coverageinvestigateOpt}"))
+          return 0
+          ;;
+        minify-check)
+          COMPREPLY=($(compgen -W "${globalOpt} ${extractOpt} ${minifycheckOpt}"))
           return 0
           ;;
         analyze)
