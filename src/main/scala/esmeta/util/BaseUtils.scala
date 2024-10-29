@@ -173,6 +173,19 @@ object BaseUtils {
   /** shuffle a sequence */
   def shuffle[T](seq: Seq[T]) = rand.shuffle(seq)
 
+  /** Chi-squared independence test for 2x2 contingency table */
+  def chiSquaredTest(aT: Int, aF: Int, bT: Int, bF: Int): Double = {
+    val n = aT + aF + bT + bF
+    val eAT = (aT + aF) * (aT + bT) / n.toDouble
+    val eAF = (aT + aF) * (aF + bF) / n.toDouble
+    val eBT = (bT + bF) * (aT + bT) / n.toDouble
+    val eBF = (bT + bF) * (aF + bF) / n.toDouble
+    (aT - eAT) * (aT - eAT) / eAT +
+    (aF - eAF) * (aF - eAF) / eAF +
+    (bT - eBT) * (bT - eBT) / eBT +
+    (bF - eBF) * (bF - eBF) / eBF
+  }
+
   /** stringify */
   def stringify[T](t: T)(using rule: Appender.Rule[T]): String =
     rule(Appender(), t).toString

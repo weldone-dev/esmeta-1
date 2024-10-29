@@ -11,6 +11,8 @@ import esmeta.es.util.Coverage.Interp
 import esmeta.state.*
 import esmeta.util.*
 import esmeta.util.SystemUtils.*
+import esmeta.es.util.fuzzer.{MinifyChecker, FSTrieWrapper}
+import esmeta.js.minifier.Minifier
 import io.circe.*, io.circe.syntax.*
 
 import scala.math.Ordering.Implicits.seqOrdering
@@ -27,6 +29,11 @@ case class Coverage(
 
   val jsonProtocol: JsonProtocol = JsonProtocol(cfg)
   import jsonProtocol.given
+
+  // TODO: replace with real minify checker
+  val swcMinifyChecker = MinifyChecker(cfg, s => Minifier.minifySwc(s).toOption)
+
+  val fsTrie = new FSTrieWrapper[String]()
 
   // minimal scripts
   def minimalScripts: Set[Script] = _minimalScripts
@@ -81,14 +88,14 @@ case class Coverage(
   /** evaluate a given ECMAScript program */
   def run(code: String): Interp = {
     val initSt = cfg.init.from(code)
-    val interp = Interp(initSt, kFs, cp, timeLimit)
+    val interp = Interp(initSt, cp, timeLimit)
     interp.result; interp
   }
 
   /** evaluate a given ECMAScript AST */
   def run(ast: Ast): Interp = {
     val initSt = cfg.init.from(ast)
-    val interp = Interp(initSt, kFs, cp, timeLimit)
+    val interp = Interp(initSt, cp, timeLimit)
     interp.result; interp
   }
 
@@ -104,8 +111,29 @@ case class Coverage(
     var touchedNodeViews: Map[NodeView, Option[Nearest]] = Map()
     var touchedCondViews: Map[CondView, Option[Nearest]] = Map()
 
+    val isMinifierHit =
+      swcMinifyChecker.check(script.code).map(_.diff.nonEmpty).getOrElse(false)
+
+    val rawStacks =
+      interp.touchedNodeViews.keys
+        .flatMap(_.view)
+        .map(v => (v._2 :: v._1).map(_.func.name))
+
+    if (isMinifierHit) then fsTrie.touchWithHit(rawStacks)
+    else fsTrie.touchWithMiss(rawStacks)
+
     // update node coverage
-    for ((nodeView, nearest) <- interp.touchedNodeViews)
+    for ((rawNodeView, nearest) <- interp.touchedNodeViews)
+      // cut out features TODO: do this in the interpreter (Kanguk Lee)
+      val NodeView(node, rawView) = rawNodeView
+      val view: View = rawView.flatMap {
+        case (rawEnclosing, feature, path) =>
+          val rawStack = feature :: rawEnclosing
+          val featureStack = rawStack.take(fsTrie((rawStack).map(_.func.name)))
+          if featureStack.isEmpty then None
+          else Some((featureStack.tail, featureStack.head, path))
+      }
+      val nodeView = NodeView(node, view)
       touchedNodeViews += nodeView -> nearest
       getScript(nodeView) match
         case None => update(nodeView, script); updated = true; covered = true
@@ -116,7 +144,17 @@ case class Coverage(
         case Some(blockScript) => blockingScripts += blockScript
 
     // update branch coverage
-    for ((condView, nearest) <- interp.touchedCondViews)
+    for ((rawCondView, nearest) <- interp.touchedCondViews)
+      // cut out features TODO: do this in the interpreter (Kanguk Lee)
+      val CondView(cond, rawView) = rawCondView
+      val view: View = rawView.flatMap {
+        case (rawEnclosing, feature, path) =>
+          val rawStack = feature :: rawEnclosing
+          val featureStack = rawStack.take(fsTrie((rawStack).map(_.func.name)))
+          if featureStack.isEmpty then None
+          else Some((featureStack.tail, featureStack.head, path))
+      }
+      val condView: CondView = CondView(cond, view)
       touchedCondViews += condView -> nearest
       getScript(condView) match
         case None =>
@@ -412,7 +450,7 @@ case class Coverage(
 object Coverage {
   class Interp(
     initSt: State,
-    kFs: Int,
+    // kFs: Int,
     cp: Boolean,
     timeLimit: Option[Int],
   ) extends Interpreter(initSt, timeLimit = timeLimit, keepProvenance = true) {
@@ -446,7 +484,7 @@ object Coverage {
 
     // get syntax-sensitive views
     private def getView(node: Node | Cond): View =
-      val stack = st.context.featureStack.take(kFs)
+      val stack = st.context.featureStack
       val path = if (cp) then Some(st.context.callPath) else None
       stack match {
         case Nil                  => None
