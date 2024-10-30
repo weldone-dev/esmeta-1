@@ -16,6 +16,7 @@ import esmeta.js.minifier.Minifier
 import io.circe.*, io.circe.syntax.*
 
 import scala.math.Ordering.Implicits.seqOrdering
+import esmeta.es.util.fuzzer.FSTrieConfig
 
 /** coverage measurement of cfg */
 case class Coverage(
@@ -31,9 +32,11 @@ case class Coverage(
   import jsonProtocol.given
 
   // TODO: replace with real minify checker
-  val swcMinifyChecker = MinifyChecker(cfg, s => Minifier.minifySwc(s).toOption)
+  val swcMinifyChecker =
+    MinifyChecker(cfg.spec, MinifyChecker.swcMinifyFunction)
 
-  val fsTrie = new FSTrieWrapper[String]()
+  val fsTrie =
+    new FSTrieWrapper[String](config = FSTrieConfig(maxSensitivity = kFs))
 
   // minimal scripts
   def minimalScripts: Set[Script] = _minimalScripts
@@ -41,6 +44,9 @@ case class Coverage(
 
   // meta-info of each script
   private var _minimalInfo: Map[String, ScriptInfo] = Map()
+  def minifiableRate: Double = _minimalInfo.values.count(
+    _.minifiable.getOrElse(false),
+  ) / _minimalInfo.size.toDouble
 
   // mapping from nodes/conditions to scripts
   private var nodeViewMap: Map[Node, Map[View, Script]] = Map()
@@ -111,8 +117,10 @@ case class Coverage(
     var touchedNodeViews: Map[NodeView, Option[Nearest]] = Map()
     var touchedCondViews: Map[CondView, Option[Nearest]] = Map()
 
+    val strictCode = USE_STRICT + code
+
     val isMinifierHit =
-      swcMinifyChecker.check(script.code).map(_.diff.nonEmpty).getOrElse(false)
+      swcMinifyChecker.check(strictCode).map(_.diff.nonEmpty).getOrElse(false)
 
     val rawStacks =
       interp.touchedNodeViews.keys
@@ -170,6 +178,7 @@ case class Coverage(
         ConformTest.createTest(cfg, finalSt),
         touchedNodeViews.keys,
         touchedCondViews.keys,
+        minifiable = Some(isMinifierHit),
       )
 
     // TODO: impl checkWithBlocking using `blockingScripts`
@@ -249,6 +258,7 @@ case class Coverage(
     withScriptInfo = true,
     withTargetCondViews = true,
     withUnreachableFuncs = true,
+    withFStrie = true,
     withMsg = withMsg,
   )
 
@@ -259,6 +269,7 @@ case class Coverage(
     withScriptInfo: Boolean = false,
     withTargetCondViews: Boolean = false,
     withUnreachableFuncs: Boolean = false,
+    withFStrie: Boolean = false,
     // TODO(@hyp3rflow): use this for ignoring dump messages
     withMsg: Boolean = false,
   ): Unit =
@@ -299,6 +310,25 @@ case class Coverage(
         getData = USE_STRICT + _.code + LINE_SEP,
         remove = true,
       )
+      val minifiableMinimalScripts = _minimalScripts.filter(s =>
+        _minimalInfo.get(s.name).exists(_.minifiable.getOrElse(false)),
+      )
+      dumpDir[Script](
+        name = "minimal ECMAScript programs (minifiable)",
+        iterable = minifiableMinimalScripts,
+        dirname = s"$baseDir/minimal-minifiable",
+        getName = _.name,
+        getData = USE_STRICT + _.code + LINE_SEP,
+        remove = true,
+      )
+      dumpDir[Script](
+        name = "minimal ECMAScript programs (not minifiable)",
+        iterable = _minimalScripts -- minifiableMinimalScripts,
+        dirname = s"$baseDir/minimal-not-minifiable",
+        getName = _.name,
+        getData = USE_STRICT + _.code + LINE_SEP,
+        remove = true,
+      )
       log("Dumped scripts")
     if (withScriptInfo)
       dumpDir[(String, ScriptInfo)](
@@ -332,6 +362,23 @@ case class Coverage(
         filename = s"$baseDir/unreach-funcs",
       )
       log("dumped unreachable functions")
+    if (withFStrie)
+      import fsTrie.given
+      val fsTrieConfig = fsTrie.config
+      val fsTrieRoot = fsTrie.root
+      dumpJson(
+        name = "fstrie config",
+        data = fsTrieConfig,
+        filename = s"$baseDir/fstrie-config.json",
+        noSpace = false,
+      )
+      dumpJson(
+        name = "fstrie root",
+        data = fsTrieRoot,
+        filename = s"$baseDir/fstrie-root.json",
+        noSpace = false,
+      )
+      log("dumped fstriewrapper")
 
   /** conversion to string */
   private def percent(n: Double, t: Double): Double = n / t * 100
@@ -500,6 +547,7 @@ object Coverage {
     test: ConformTest,
     touchedNodeViews: Iterable[NodeView],
     touchedCondViews: Iterable[CondView],
+    minifiable: Option[Boolean] = None,
   )
 
   /** syntax-sensitive view */

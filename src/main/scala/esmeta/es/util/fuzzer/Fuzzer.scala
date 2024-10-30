@@ -311,6 +311,7 @@ class Fuzzer(
       "minimal(#)",
       "node(#)",
       "branch(#)",
+      "minifiable(%)",
     )
     if (kFs > 0) header ++= Vector(s"sens-node(#)", s"sens-branch(#)")
     header ++= Vector("target-conds(#)")
@@ -351,7 +352,8 @@ class Fuzzer(
     val bv = cov.branchViewCov
     val tc = cov.targetCondViews.size
     val tcv = cov.targetCondViews.map(_._2.size).fold(0)(_ + _)
-    var row = Vector(iter, e, t, visited.size, pool.size, n, b)
+    val mr = (cov.minifiableRate * 100 * 1000).round / 1000.0
+    var row = Vector(iter, e, t, visited.size, pool.size, n, b, mr)
     if (kFs > 0) row ++= Vector(nv, bv)
     row ++= Vector(tc)
     if (kFs > 0) row ++= Vector(tcv)

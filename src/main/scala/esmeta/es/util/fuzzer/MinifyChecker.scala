@@ -5,6 +5,15 @@ import esmeta.es.*
 import esmeta.parser.ESParser
 import esmeta.spec.Spec
 import akka.http.scaladsl.model.headers.CacheDirectives.`max-age`
+import esmeta.js.minifier.Minifier
+
+object MinifyChecker {
+  val swcMinifyFunction: String => Option[String] = code =>
+    Minifier.minifySwc(code) match
+      case Failure(exception) =>
+        println(s"[minify-check] $code $exception"); None
+      case Success(minified) => Some(minified)
+}
 
 class MinifyChecker(
   spec: Spec,
@@ -62,13 +71,13 @@ class MinifyChecker(
 
     var result = acc
 
-    println("------flattenedAst1-----")
-    flattenedAst1.foreach(ast => println(ast.name))
-    println("------------------------")
+    // println("------flattenedAst1-----")
+    // flattenedAst1.foreach(ast => println(ast.name))
+    // println("------------------------")
 
-    println("------flattenedAst2-----")
-    flattenedAst2.foreach(ast => println(ast.name))
-    println("------------------------")
+    // println("------flattenedAst2-----")
+    // flattenedAst2.foreach(ast => println(ast.name))
+    // println("------------------------")
 
     // implement diff algorithm here
     // partially implement just comparing ast names

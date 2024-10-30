@@ -5,19 +5,18 @@ import scala.collection.mutable.Map as MMap
 import esmeta.util.BaseUtils.chiSquaredTest
 import io.circe.*, io.circe.syntax.*, io.circe.generic.semiauto.*
 
-class FSTrieWrapper[K] {
-  val config: FSTrieConfig = FSTrieConfig(
-    scoringFunction = (hits, misses) => {
-      val absentHits = rootHits - hits
-      val absentMisses = rootMisses - misses
-      chiSquaredTest(hits, misses, absentHits, absentMisses)
-    },
-    promotionCriteria = 3,
-    demotionCriteria = 3,
-    maxSensitivity = 3,
-  )
-
+class FSTrieWrapper[K](
+  val config: FSTrieConfig,
+) {
   val root: FSTrie[K] = FSTrie[K](status = FSTrieStatus.Noticed)
+
+  val scoringFunction: (Int, Int) => Double = (hits, misses) => {
+    val absentHits = rootHits - hits
+    val absentMisses = rootMisses - misses
+    chiSquaredTest(hits, misses, absentHits, absentMisses)
+  }
+  // val scoringFunction: (Int, Int) => Double = (hits, misses) =>
+  //   hits.toDouble / (hits + misses)
 
   private var rootHits: Int = 0
   private var rootMisses: Int = 0
@@ -52,6 +51,8 @@ class FSTrieWrapper[K] {
 
   given fSTrieEncoder: Encoder[FSTrie[String]] = deriveEncoder
   given fsTrieDecoder: Decoder[FSTrie[String]] = deriveDecoder
+  given fsTrieConfigEncoder: Encoder[FSTrieConfig] = deriveEncoder
+  given fsTrieConfigDecoder: Decoder[FSTrieConfig] = deriveDecoder
 
   /** A trie that stores the status of each node in the trie, and calculates the
     * score of each node based on the hits and misses of the node and its
@@ -146,7 +147,7 @@ class FSTrieWrapper[K] {
         node.dirty = false
         node.status match {
           case Promotable => // calculate the score based on hits and misses
-            node.avgScore = config.scoringFunction(node.hits, node.misses)
+            node.avgScore = scoringFunction(node.hits, node.misses)
             node.avgScoreSq = node.avgScore * node.avgScore
             node.promotables = 1
           case Noticed => // calculate the average score and number of the node's promotables
@@ -272,8 +273,6 @@ class FSTrieWrapper[K] {
   *   scoring function, at which a node is demoted from Demotable to Ignored
   */
 case class FSTrieConfig(
-  scoringFunction: (Int, Int) => Double = (hits, misses) =>
-    hits.toDouble / (hits + misses),
   promotionCriteria: Int = 3,
   demotionCriteria: Int = 3,
   maxSensitivity: Int = 3,
