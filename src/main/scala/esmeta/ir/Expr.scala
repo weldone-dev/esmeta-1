@@ -7,7 +7,22 @@ import esmeta.util.DoubleEquals
 import scala.annotation.meta.field
 
 // IR expressions
-sealed trait Expr extends IRElem with LangEdge
+sealed trait Expr extends IRElem with LangEdge {
+  var comment: (Option[String], Option[String]) = (None, None)
+  def appendCmt(comment: String): this.type =
+    this.comment =
+      (this.comment._1, Some(this.comment._2.getOrElse("") ++ comment))
+    this
+
+  def prependCmt(comment: String): this.type =
+    this.comment =
+      (Some(this.comment._1.getOrElse("") ++ comment), this.comment._2)
+    this
+
+  def passCmt(from: Expr): this.type =
+    this.comment = from.comment
+    this
+}
 object Expr extends Parser.From(Parser.expr)
 case class EParse(code: Expr, rule: Expr) extends Expr
 case class EGrammarSymbol(name: String, params: List[Boolean]) extends Expr

@@ -9,6 +9,21 @@ sealed trait Inst extends IRElem with LangEdge:
   def toList: List[Inst] = this match
     case ISeq(is) => is
     case i        => List(i)
+
+  var comment: (Option[String], Option[String]) = (None, None)
+  def appendCmt(comment: String): this.type =
+    this.comment =
+      (this.comment._1, Some(this.comment._2.getOrElse("") ++ comment))
+    this
+
+  def prependCmt(comment: String): this.type =
+    this.comment =
+      (Some(this.comment._1.getOrElse("") ++ comment), this.comment._2)
+    this
+
+  def passCmt(from: Inst): this.type =
+    this.comment = from.comment
+    this
 object Inst extends Parser.From(Parser.inst)
 
 // normal instructions

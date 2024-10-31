@@ -73,6 +73,11 @@ class Stringifier(detail: Boolean, location: Boolean) {
 
   // instructions
   given instRule: Rule[Inst] = withLoc { (app, inst) =>
+    (detail, inst.comment._1) match
+      case (false, _) | (_, None) => app
+      case (true, Some(value)) =>
+        val escaped = s""" /* ${value.replace(raw"*/", raw"*\/")} */"""
+        app >> escaped
     inst match
       case IExpr(expr) =>
         app >> expr
@@ -102,7 +107,8 @@ class Stringifier(detail: Boolean, location: Boolean) {
         app >> "nop"
       case ISeq(insts) =>
         if (insts.isEmpty) app >> "{}"
-        else app.wrap(for { i <- insts } app :> i)
+        else if (detail) app.wrap(for { i <- insts } app :> i)
+        else app >> "{ ... }"
       case IIf(cond, thenInst, elseInst) =>
         app >> "if " >> cond >> " " >> thenInst
         (thenInst, elseInst) match
@@ -118,10 +124,22 @@ class Stringifier(detail: Boolean, location: Boolean) {
         given Rule[List[Expr]] = iterableRule("(", ", ", ")")
         app >> "sdo-call " >> lhs >> " = "
         app >> ast >> "->" >> method >> args
+    (detail, inst.comment._2) match
+      case (false, _) | (_, None) => app
+      case (true, Some(value)) if !value.contains("\n") =>
+        app >> " /* " >> value >> " */"
+      case (true, Some(value)) =>
+        val escaped = s"""\n/* ${value.replace(raw"*/", raw"*\/")} */"""
+        app >> escaped
   }
 
   // expressions
   given exprRule: Rule[Expr] = withLoc { (app, expr) =>
+    (detail, expr.comment._1) match
+      case (false, _) | (_, None) => app
+      case (true, Some(value)) =>
+        val escaped = s""" /* ${value.replace(raw"*/", raw"*\/")} */"""
+        app >> escaped
     expr match
       case EParse(code, rule) =>
         app >> "(parse " >> code >> " " >> rule >> ")"
@@ -185,6 +203,11 @@ class Stringifier(detail: Boolean, location: Boolean) {
         allocExprRule(app, expr)
       case expr: LiteralExpr =>
         literalExprRule(app, expr)
+    (detail, expr.comment._2) match
+      case (false, _) | (_, None) => app
+      case (true, Some(value)) =>
+        val escaped = s""" /* ${value.replace(raw"*/", raw"*\/")} */"""
+        app >> escaped
   }
 
   // random number expressions
