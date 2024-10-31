@@ -56,6 +56,7 @@ val ENUM_REJECT = Enum("Reject")
 
 /** predefined identifiers */
 val GLOBAL_RESULT = Global("RESULT")
+val GLOBAL_RESULT_ITER_COUNT = Global("TOTAL_ITERATION_COUNT")
 
 /** predefined string */
 val STR_TOP_LEVEL = "TOP_LEVEL"

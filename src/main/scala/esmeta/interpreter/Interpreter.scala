@@ -76,7 +76,10 @@ class Interpreter(
     case ExitCursor(func) =>
       st.callStack match
         case Nil =>
-          st.context.retVal.map((_, v) => st.globals += GLOBAL_RESULT -> v)
+          st.context.retVal.map((_, v) =>
+            st.globals += GLOBAL_RESULT -> v
+            st.globals += GLOBAL_RESULT_ITER_COUNT -> Math(iter),
+          )
           false
         case CallContext(ctxt, retId) :: rest =>
           val (ret, value) = st.context.retVal.getOrElse(throw NoReturnValue)
