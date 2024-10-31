@@ -19,6 +19,10 @@ object SystemUtils {
   // encoding
   private val ENC = "utf8"
 
+  /** path existence check */
+  def pathExists(path: String): Boolean =
+    Files.exists(Paths.get(path))
+
   /** file reader */
   def fileReader(filename: String): Reader =
     Source.fromFile(filename, ENC).bufferedReader

@@ -2,6 +2,7 @@ package esmeta.test262
 
 import esmeta.*
 import esmeta.cfg.CFG
+import esmeta.cfgBuilder.CFGBuilder
 import esmeta.error.{NotSupported, InvalidExit, UnexpectedParseResult}
 import esmeta.error.NotSupported.*
 import esmeta.es.*
@@ -16,6 +17,10 @@ import esmeta.util.{ConcurrentPolicy => CP}
 import esmeta.util.SystemUtils.*
 import java.io.PrintWriter
 import java.util.concurrent.TimeoutException
+import esmeta.peval.{ORDINARY_CALL_EVAL_BODY, PartialEvaluator}
+import esmeta.peval.util.{AstHelper, Test262PEvalPolicy}
+
+import java.nio.file.FileAlreadyExistsException
 
 /** data in Test262 */
 case class Test262(
@@ -42,21 +47,53 @@ case class Test262(
   /** basic harness files */
   lazy val basicHarness = getHarness("assert.js")() ++ getHarness("sta.js")()
 
+  lazy val allHarnesses =
+    val harnesses =
+      for {
+        file <- walkTree(s"$TEST262_DIR/harness")
+        if file.isFile && jsFilter(file.getName)
+        hs <- parseFile(file.toString).flattenStmt
+      } yield hs
+    harnesses.toList
+
+  lazy val cfgWithPEvaledHarness =
+    val target = cfg.fnameMap.getOrElse(ORDINARY_CALL_EVAL_BODY, ???).irFunc
+    val overloads = PartialEvaluator.ForECMAScript.pevalForOCEB(
+      program = cfg.program,
+      decls = AstHelper
+        .getPEvalTargetAsts(mergeStmt(allHarnesses))
+        .zipWithIndex
+        .map {
+          case (decl, idx) => (decl, Some(s"${target.name}PEvaled${idx}"))
+        },
+    )
+    val sfMap = PartialEvaluator.ForECMAScript.genMap(overloads)(using
+      msg = Some("PEval harness called.."),
+    )
+    CFGBuilder
+      .byIncremental(cfg, overloads.map(_._1), sfMap)
+      .getOrElse(???) // Cfg incremental build fail
+
   /** specification */
   val spec = cfg.spec
 
   /** load test262 */
   def loadTest(filename: String): Ast =
+    loadTest(filename, Test(filename).includes)._1
+
+  /** load test262 */
+  def loadTestAndAst(filename: String): (Ast, Ast) =
     loadTest(filename, Test(filename).includes)
 
   /** load test262 with harness files */
-  def loadTest(filename: String, includes: List[String]): Ast =
+  def loadTest(filename: String, includes: List[String]): (Ast, Ast) =
     // load harness
     val harnessStmts = includes.foldLeft(basicHarness)(_ ++ getHarness(_)())
 
     // merge with harnesses
-    val stmts = flattenStmt(parseFile(filename))
-    mergeStmt(harnessStmts ++ stmts)
+    val fileAst = parseFile(filename)
+    val stmts = flattenStmt(fileAst)
+    (mergeStmt(harnessStmts ++ stmts), fileAst)
 
   /** get tests */
   def getTests(
@@ -114,7 +151,25 @@ case class Test262(
     timeLimit: Option[Int] = None, // default: no limit
     concurrent: CP = CP.Single,
     verbose: Boolean = false,
+    peval: Test262PEvalPolicy = Test262PEvalPolicy.DEFAULT,
   ): Summary = {
+
+    // log directory
+    var THIS_TEST_LOG_DIR = {
+      val firstPath = s"$TEST262TEST_LOG_DIR/eval-$dateStr"
+      if (!pathExists(firstPath)) then firstPath
+      else
+        LazyList
+          .range(1, 5000)
+          .map(_.toString)
+          .find(path =>
+            !pathExists(s"$TEST262TEST_LOG_DIR/eval-$dateStr-$path"),
+          )
+          .getOrElse(
+            throw FileAlreadyExistsException(firstPath),
+          )
+    }
+
     // extract tests from paths
     val tests: List[Test] = getTests(paths, features)
 
@@ -125,7 +180,7 @@ case class Test262(
     val (targetTests, removed) = testFilter(tests, withYet)
 
     // open log file
-    val logPW = getPrintWriter(s"$TEST262TEST_LOG_DIR/log")
+    val logPW = getPrintWriter(s"$THIS_TEST_LOG_DIR/log")
 
     // get progress bar for extracted tests
     val progressBar = getProgressBar(
@@ -153,13 +208,22 @@ case class Test262(
       pw = logPW,
       postSummary = if (useCoverage) cov.toString else "",
       log = log && multiple,
+      logDir = THIS_TEST_LOG_DIR,
     )(
       // check final execution status of each Test262 test
       check = test =>
         val filename = test.path
         val st =
           if (!useCoverage)
-            evalFile(filename, log && !multiple, detail, Some(logPW), timeLimit)
+            evalFile(
+              filename,
+              log && !multiple,
+              detail,
+              Some(logPW),
+              timeLimit,
+              peval,
+              logDir = THIS_TEST_LOG_DIR,
+            )
           else cov.run(filename)
         val returnValue = st(GLOBAL_RESULT)
         if (returnValue != Undef) throw InvalidExit(returnValue)
@@ -171,6 +235,19 @@ case class Test262(
 
     // close log file
     logPW.close()
+
+    if (log && peval.harness.shouldCompute) then
+      // TODO only log result of partial evaluation
+      for {
+        f <- cfgWithPEvaledHarness.funcs
+        if f.name.contains("PEvaled") // ad-hoc fix
+      } {
+        val pevalPw = getPrintWriter(
+          s"$THIS_TEST_LOG_DIR/peval/${f.name}.ir",
+        )
+        pevalPw.println(f)
+        pevalPw.close
+      }
 
     progressBar.summary
   }
@@ -209,6 +286,7 @@ case class Test262(
       progressBar = progressBar,
       pw = logPW,
       log = log,
+      logDir = s"$TEST262TEST_LOG_DIR/parse-$dateStr",
     )(
       // check parsing result with its corresponding code
       check = test =>
@@ -239,10 +317,61 @@ case class Test262(
     detail: Boolean = false,
     logPW: Option[PrintWriter] = None,
     timeLimit: Option[Int] = None,
+    peval: Test262PEvalPolicy = Test262PEvalPolicy.DEFAULT,
+    logDir: String, // = s"$TEST262TEST_LOG_DIR",
   ): State =
-    val ast = loadTest(filename)
+    val (ast, fileAst) = loadTestAndAst(filename)
     val code = ast.toString(grammar = Some(cfg.grammar)).trim
-    val st = Initialize(cfg, code, Some(ast), Some(filename))
+
+    val st =
+      val target = cfg.fnameMap.getOrElse(ORDINARY_CALL_EVAL_BODY, ???).irFunc
+      lazy val defaultSetting = Initialize(cfg, code, Some(ast), Some(filename))
+      if (peval.harness.shouldCompute) then
+        val _ = cfgWithPEvaledHarness
+      if (peval.isNever) then defaultSetting
+      else {
+        if (peval.individual.isNever /* && peval.harness.shouldCompute */ ) then {
+          if (peval.harness.shouldUse) then
+            Initialize(cfgWithPEvaledHarness, code, Some(ast), Some(filename))
+          else defaultSetting
+        } else
+          val overloads = PartialEvaluator.ForECMAScript.pevalForOCEB(
+            program = cfg.program,
+            decls = AstHelper.getPEvalTargetAsts(fileAst).zipWithIndex.map {
+              case (decl, idx) =>
+                (decl, Some(s"${target.name}PEvaled${idx + 2048}"))
+            },
+            // Ad-hoc fix : add 2048 to idx to avoid name conflict
+          )
+
+          if (log) then
+            for ((f, _) <- overloads) {
+              val pevalPw = getPrintWriter(
+                s"$logDir/peval/${f.name}.ir",
+              )
+              pevalPw.println(f)
+              pevalPw.close
+            }
+
+          val sfMap =
+            PartialEvaluator.ForECMAScript.genMap(overloads)
+          // 'cfgWithPEvaledHarness' is computed
+          val newCfg =
+            CFGBuilder
+              .byIncremental(
+                if (peval.harness.shouldUse) then cfgWithPEvaledHarness
+                else cfg,
+                overloads.map(_._1),
+                sfMap,
+              )
+              .getOrElse(???) // Cfg incremental build fail
+
+          if (peval.individual.shouldUse) then
+            Initialize(newCfg, code, Some(ast), Some(filename))
+          else if (peval.harness.shouldUse) then
+            Initialize(cfgWithPEvaledHarness, code, Some(ast), Some(filename))
+          else defaultSetting
+      }
     Interpreter(
       st = st,
       log = log,
@@ -252,18 +381,18 @@ case class Test262(
     )
 
   // logging mode for tests
-  private def logForTests(
+  private def logForTests[T](
     name: String,
     progressBar: ProgressBar[Test],
     pw: PrintWriter,
     postSummary: => String = "",
     log: Boolean = false,
+    logDir: String,
   )(
     check: Test => Unit,
     postJob: String => Unit = _ => {},
   ): Unit =
     val summary: Summary = progressBar.summary
-    val logDir = s"$TEST262TEST_LOG_DIR/$name-$dateStr"
 
     // setting for logging
     if (log)
@@ -277,20 +406,23 @@ case class Test262(
     // logging after tests
     if (log)
       summary.dumpTo(logDir)
+      val summaryStr =
+        if (postSummary.isEmpty) s"$summary"
+        else s"$summary$LINE_SEP$postSummary"
+      dumpFile(s"Test262 $name test summary", summaryStr, s"$logDir/summary")
 
       // ad-hoc logging for iteration count
-      // TODO refactor to more robust method
-      val iterCountMsg =
+      val (totalIterCount, meanIterCount) =
         import scala.math.BigInt
         val iters = (for {
           (reason, _) <- summary.pass.flat
           iter = BigInt(reason.mkString("").toLong)
         } yield iter)
-        s"- iteration (mean): ${iters.sum / iters.size}\n- iteration (total): ${iters.sum}\n"
+        (iters.sum, iters.sum / iters.size)
+      dumpFile(
+        s"total: $totalIterCount\nmean:$meanIterCount",
+        s"$logDir/iteration-count-summary",
+      )
 
-      val summaryStr =
-        if (postSummary.isEmpty) s"$iterCountMsg$summary"
-        else s"$iterCountMsg$summary$LINE_SEP$postSummary"
-      dumpFile(s"Test262 $name test summary", summaryStr, s"$logDir/summary")
 }
 object Test262 extends Git(TEST262_DIR)

@@ -16,6 +16,9 @@ import esmeta.test262.util.TestFilter
 import java.io.File
 import java.util.concurrent.TimeoutException
 
+// TODO sort imports
+import esmeta.peval.util.Test262PEvalPolicy
+
 /** `test262-test` phase */
 case object Test262Test extends Phase[CFG, Summary] {
   val name = "test262-test"
@@ -25,6 +28,12 @@ case object Test262Test extends Phase[CFG, Summary] {
     cmdConfig: CommandConfig,
     config: Config,
   ): Summary =
+
+    val pevalConfig = config.peval.getOrElse(Test262PEvalPolicy.DEFAULT);
+
+    if (config.coverage && !(pevalConfig.isNever)) then
+      throw OptConflictError("-test262-test:coverage", "-test262-test:peval")
+
     // set test mode
     TEST_MODE = true
 
@@ -52,6 +61,8 @@ case object Test262Test extends Phase[CFG, Summary] {
       config.coverage,
       config.timeLimit,
       config.concurrent,
+      false,
+      pevalConfig,
     )
 
     // if summary has failed test case, throws an exception
@@ -111,6 +122,20 @@ case object Test262Test extends Phase[CFG, Summary] {
       "set the number of thread to use concurrently (default: no concurrent)." +
       " If number <= 0, use automatically determined number of threads.",
     ),
+    (
+      "peval",
+      StrOption(
+        (c, p) => {
+          c.peval = Some(
+            Test262PEvalPolicy
+              .parseOpt(p)
+              .getOrElse(throw OptInvalidError(p, "test262-test")),
+          )
+        },
+        prefer = Test262PEvalPolicy.values.map(_.toParsedString),
+      ),
+      "turn on partial evaluation. (not possible with `coverage` option)",
+    ),
   )
   case class Config(
     var target: Option[String] = None,
@@ -122,5 +147,6 @@ case object Test262Test extends Phase[CFG, Summary] {
     var detail: Boolean = false,
     var concurrent: CP = CP.Single,
     var features: Option[List[String]] = None,
+    var peval: Option[Test262PEvalPolicy] = None,
   )
 }
