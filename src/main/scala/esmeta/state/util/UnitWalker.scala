@@ -61,6 +61,9 @@ trait UnitWalker extends BasicUnitWalker {
     case _: CodeUnit      =>
     case sv: SimpleValue  => walk(sv)
 
+    case PClo(_, captrued)             => ???
+    case PCont(_, captured, callStack) => ???
+
   // address
   def walk(addr: Addr): Unit = {}
 

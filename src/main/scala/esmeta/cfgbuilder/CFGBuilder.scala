@@ -17,7 +17,7 @@ object CFGBuilder:
   /* incremental CFG build for FDI */
   def byIncremental(
     from: CFG,
-    newFs: List[IRFunc],
+    newFs: Iterable[IRFunc],
     newSfMap: SpecializedFuncs,
     log: Boolean = false,
   ): Option[CFG] = for {

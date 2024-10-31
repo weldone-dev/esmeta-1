@@ -4,6 +4,8 @@ import esmeta.cfg.{CFG, Func}
 import esmeta.error.*
 import esmeta.es.*
 import esmeta.ir.{Func => IRFunc, *}
+import esmeta.peval.Predict
+import esmeta.peval.pstate.PCallContext
 import esmeta.ty.*
 import esmeta.util.DoubleEquals
 import java.math.MathContext.UNLIMITED
@@ -71,6 +73,23 @@ case class Cont(
   captured: Map[Name, Value],
   callStack: List[CallContext],
 ) extends Callable
+
+/** function values for partial eval */
+sealed trait PCallable extends Value {
+  def func: IRFunc
+  def captured: Map[Name, Predict[Value]]
+}
+
+/** closures for partial eval */
+case class PClo(func: IRFunc, captured: Map[Name, Predict[Value]])
+  extends PCallable
+
+/** continuations for partial eval */
+case class PCont(
+  func: IRFunc,
+  captured: Map[Name, Predict[Value]],
+  callStack: List[PCallContext],
+) extends PCallable
 
 /** abstract syntax tree (AST) values */
 case class AstValue(ast: Ast) extends Value

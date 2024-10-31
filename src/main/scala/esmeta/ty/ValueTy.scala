@@ -4,6 +4,8 @@ import esmeta.cfg.Func
 import esmeta.error.*
 import esmeta.error.NotSupported.Category.*
 import esmeta.error.NotSupported.{*, given}
+import esmeta.peval.{Known, Unknown, Predict}
+import esmeta.peval.pstate.{PHeap}
 import esmeta.state.*
 import esmeta.ty.util.Parser
 import esmeta.util.*
@@ -187,6 +189,45 @@ sealed trait ValueTy extends Ty with Lattice[ValueTy] {
     case Bool(b)                         => bool contains b
     case Undef                           => undef
     case Null                            => nullv
+    case PClo(func, _)                   => clo contains func.name
+    // TODO PEvaled functions should be contained also
+    case PCont(func, _, _) =>
+      // TODO PEvaled functions should be contained also
+      // TODO can't use .id since PCont is NOT CFG Func
+      ???
+
+  def contains(pv: Predict[Value], pheap: PHeap): Predict[Boolean] =
+    pv.flatMap {
+      _ match
+        case _ if this eq Top => Known(true)
+        case a: Addr =>
+          import esmeta.peval.pstate.*;
+          pheap(a) match
+            case Unknown => ??? // TODO
+            case Known(obj: PRecordObj) =>
+              ??? // TODO: record.contains(obj, pheap)
+            case Known(obj: PMapObj)  => ??? // TODO: map.contains(obj, pheap)
+            case Known(obj: PListObj) => ??? // TODO: list.contains(obj, pheap)
+            case Known(obj: PYetObj)  => throw NotSupported(Feature)(obj.msg)
+        case Clo(func, captured) => Known(clo contains func.irFunc.name)
+        case Cont(func, captured, callStack) => Known(cont contains func.id)
+        case v: AstValue                     => Known(ast.contains(v))
+        case x @ GrammarSymbol(name, params) => Known(grammarSymbol contains x)
+        case m: Math                         => Known(math contains m)
+        case Infinity(p)                     => Known(infinity contains p)
+        case Enum(name)                      => Known(enumv contains name)
+        case CodeUnit(c)                     => Known(codeUnit)
+        case n: Number                       => Known(number contains n)
+        case BigInt(n)                       => Known(bigInt)
+        case Str(s)                          => Known(str contains s)
+        case Bool(b)                         => Known(bool contains b)
+        case Undef                           => Known(undef)
+        case Null                            => Known(nullv)
+        case PClo(func, _)                   => Known(clo contains func.name)
+        // TODO PEvaled functions should be contained also
+        case PCont(func, _, _) =>
+          ??? // Known(cont contains func.id) TODO PCont no longer CFG Func
+    }
 
   /** copy value type */
   def copied(

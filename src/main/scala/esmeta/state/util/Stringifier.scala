@@ -7,6 +7,9 @@ import esmeta.es.*
 import esmeta.util.BaseUtils.*
 import esmeta.util.Appender.{given, *}
 
+import esmeta.peval.*
+import esmeta.peval.pstate.*
+
 /** stringifier for state elements */
 class Stringifier(detail: Boolean, location: Boolean) {
   // load IR Stringifier
@@ -33,6 +36,10 @@ class Stringifier(detail: Boolean, location: Boolean) {
       case elem: Value       => valueRule(app, elem)
       case elem: RefTarget   => refTargetRule(app, elem)
       case elem: Uninit      => uninitRule(app, elem)
+      case elem: PState      => pstRule(app, elem)
+      case elem: PHeap       => pheapRule(app, elem)
+      case elem: PObj        => pobjRule(app, elem)
+      case elem: Predict[_]  => predictRule(app, elem)
 
   // states
   given stRule: Rule[State] = (app, st) =>
@@ -45,6 +52,25 @@ class Stringifier(detail: Boolean, location: Boolean) {
       app :> "globals: " >> st.globals
       app :> "heap: " >> st.heap
     }
+
+  // pstates
+  given pstRule: Rule[PState] = (app, pst) =>
+    app.wrap {
+      // TODO app :> "globals: " >> pst.globals
+      app :> "context.func.name: " >> pst.context.func.name
+      given Rule[Option[Predict[Value]]] =
+        optionRule("/* no return value (None) */")
+      app :> "context.ret: " >> pst.context.ret
+      app :> "locals: " >> pst.locals
+      app :> "heap: " >> pst.heap
+    }
+
+  // predict
+  given predictRule[T]: Rule[Predict[T]] = (app, predict) =>
+    predict match
+      case Known(value: Value) => app >> value
+      case Known(v)            => app >> v.toString()
+      case Unknown             => app >> "???"
 
   // contexts
   given ctxtRule: Rule[Context] = (app, ctxt) =>
@@ -70,6 +96,12 @@ class Stringifier(detail: Boolean, location: Boolean) {
     val Heap(map, size) = heap
     app >> s"(SIZE = " >> size.toString >> "): " >> map
 
+  // pheaps
+  given pheapRule: Rule[PHeap] = (app, pheap) =>
+    val PHeap(map) = pheap
+    app >> map.map { case (k, v) => (k.toString, v) }
+    app >> s"(SIZE = " >> map.knownSize >> ")"
+
   // objects
   given objRule: Rule[Obj] = (app, obj) =>
     obj match
@@ -87,6 +119,23 @@ class Stringifier(detail: Boolean, location: Boolean) {
       case YetObj(tname, msg) =>
         app >> "Yet[" >> tname >> "](\"" >> msg >> "\")"
 
+  // pobjects
+  given pobjRule: Rule[PObj] = (app, pobj) =>
+    pobj match
+      case PMapObj(map) =>
+        app >> "πMap " >> map.map { case (k, v) => (k.toString, v) }
+      case PRecordObj(tname, map) =>
+        app >> "πRecord"
+        given Rule[Iterable[(String, Predict[Value | Uninit])]] =
+          sortedMapRule("{", "}", " : ")
+        if (tname.nonEmpty) app >> "[" >> tname >> "]"
+        app >> " " >> map.map { case (k, v) => (s"\"$k\"", v) }
+      case PListObj(values) =>
+        given Rule[List[Predict[Value]]] = iterableRule("[", ", ", "]")
+        app >> "πList" >> values.toList
+      case PYetObj(tname, msg) =>
+        app >> "πYet[" >> tname >> "](\"" >> msg >> "\")"
+
   // values
   given valueRule: Rule[Value] = (app, value) =>
     value match
@@ -100,6 +149,8 @@ class Stringifier(detail: Boolean, location: Boolean) {
       case e: Enum           => enumRule(app, e)
       case cu: CodeUnit      => cuRule(app, cu)
       case sv: SimpleValue   => svRule(app, sv)
+      case pclo: PClo        => pcloRule(app, pclo)
+      case pcont: PCont      => ???
 
   // addresses
   given addrRule: Rule[Addr] = (app, addr) =>
@@ -115,11 +166,19 @@ class Stringifier(detail: Boolean, location: Boolean) {
     if (!captured.isEmpty) app >> ", " >> captured.toList
     app >> ">"
 
+  // closures
+  given pcloRule: Rule[PClo] = (app, pclo) =>
+    val PClo(func, captured) = pclo
+    given Rule[List[(Name, Known[Value])]] = iterableRule("[", ", ", "]")
+    app >> "pclo<" >> func.name
+    if (!captured.isEmpty) app >> ", " >> captured.toList
+    app >> ">"
+
   // continuations
   given cogrammarSymbolRule: Rule[Cont] = (app, cont) =>
     val Cont(func, captured, _) = cont
     given Rule[List[(Name, Value)]] = iterableRule("[", ", ", "]")
-    app >> "cont<" >> func.irFunc.name
+    app >> "cont<" >> func.name
     if (!captured.isEmpty) app >> ", " >> captured.toList
     app >> ">"
 
