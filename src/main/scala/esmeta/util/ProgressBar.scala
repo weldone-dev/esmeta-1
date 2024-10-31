@@ -86,8 +86,8 @@ case class ProgressBar[T](
     val tests = for ((x, idx) <- iterable.zipWithIndex) yield () =>
       val name = getName(x, baseSize + idx)
       getError {
-        f(x)
-        summary.pass.add(name)
+        val passMsg = f(x).toString()
+        summary.pass.add(name, passMsg)
       }.map(errorHandler(_, summary, name))
       gcount.incrementAndGet
 

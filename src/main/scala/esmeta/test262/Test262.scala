@@ -163,6 +163,7 @@ case class Test262(
           else cov.run(filename)
         val returnValue = st(GLOBAL_RESULT)
         if (returnValue != Undef) throw InvalidExit(returnValue)
+        st(GLOBAL_RESULT_ITER_COUNT)
       ,
       // dump coverage
       logDir => if (useCoverage) cov.dumpTo(logDir),
@@ -276,9 +277,20 @@ case class Test262(
     // logging after tests
     if (log)
       summary.dumpTo(logDir)
+
+      // ad-hoc logging for iteration count
+      // TODO refactor to more robust method
+      val iterCountMsg =
+        import scala.math.BigInt
+        val iters = (for {
+          (reason, _) <- summary.pass.flat
+          iter = BigInt(reason.mkString("").toLong)
+        } yield iter)
+        s"- iteration (mean): ${iters.sum / iters.size}\n- iteration (total): ${iters.sum}\n"
+
       val summaryStr =
-        if (postSummary.isEmpty) s"$summary"
-        else s"$summary$LINE_SEP$postSummary"
+        if (postSummary.isEmpty) s"$iterCountMsg$summary"
+        else s"$iterCountMsg$summary$LINE_SEP$postSummary"
       dumpFile(s"Test262 $name test summary", summaryStr, s"$logDir/summary")
 }
 object Test262 extends Git(TEST262_DIR)

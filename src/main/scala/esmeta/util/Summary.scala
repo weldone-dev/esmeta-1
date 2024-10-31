@@ -116,6 +116,14 @@ object Summary {
     map: TrieMap[Reason, Elem] = TrieMap(),
   ) {
 
+    def flat: List[(ReasonPath, String)] =
+      val mapElems = for {
+        (reason, elem) <- map.toList;
+        (reasonPath, term) <- elem.flat
+      } yield (reason :: reasonPath, term)
+      val seqElems = seq.asScala.toList.map((Nil, _))
+      seqElems ++ mapElems
+
     /** all elements */
     def all: List[String] =
       val mapElems =
