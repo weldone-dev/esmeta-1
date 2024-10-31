@@ -110,6 +110,10 @@ lazy val analyzerTest = taskKey[Unit]("Launch analyzer tests")
 lazy val analyzerTyCheckTest =
   taskKey[Unit]("Launch tycheck tests for analyzer (small)")
 
+// partial evaluator
+lazy val pevalIRTest = taskKey[Unit]("Launch partial evaluator ir tests")
+lazy val pevalESTest = taskKey[Unit]("Launch partial evaluator es tests")
+
 // es
 lazy val esTest = taskKey[Unit]("Launch ECMAScript tests")
 lazy val esEvalTest = taskKey[Unit]("Launch eval tests for ECMAScript (small)")
@@ -126,6 +130,7 @@ lazy val test262EvalTest =
 
 // Java options for assembly
 lazy val assemblyJavaOpts = Seq(
+  "-Xss64m",
   "-Xms1g",
   "-Xmx3g",
   "-XX:ReservedCodeCacheSize=512m",
@@ -260,6 +265,9 @@ lazy val root = project
     analyzerTyCheckTest := (Test / testOnly)
       .toTask(" *.analyzer.TyCheck*Test")
       .value,
+    // partial evaluator
+    pevalIRTest := (Test / testOnly).toTask(" *.peval.PEvalIR*Test").value,
+    pevalESTest := (Test / testOnly).toTask(" *.peval.PEvalES*Test").value,
     // es
     esTest := (Test / testOnly).toTask(" *.es.*Test").value,
     esEvalTest := (Test / testOnly).toTask(" *.es.Eval*Test").value,

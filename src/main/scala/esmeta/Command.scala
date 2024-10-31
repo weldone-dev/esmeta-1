@@ -155,6 +155,7 @@ case object CmdTest262Test
     "esmeta test262-test                                           # all ",
     "esmeta test262-test tests/test262/test/built-ins/Map/map.js   # file",
     "esmeta test262-test tests/test262/test/language/expressions   # directory",
+    "esmeta test262-test -test262-test:peval                       # with partial-evaluation ",
   )
   override val targetName = "<js|dir>+"
   override val needTarget = false
@@ -197,4 +198,30 @@ case object CmdIRInterp
   )
   override val targetName = "<ir>+"
 
+}
+
+// -----------------------------------------------------------------------------
+// Partial Evaluator
+// -----------------------------------------------------------------------------
+
+/** `peval` command */
+case object CmdPEval extends Command("peval", CmdCompile >> PEval) {
+  val help =
+    "(WIP) partial-evaluates 'FunctionDeclarationInstantiation' using an ECMAScript file."
+  val examples = List(
+    "esmeta peval a.js                         # partial-eval using a.js file.",
+  )
+  override val targetName = "<js>+"
+}
+
+/** `peval-then-eval` command */
+case object CmdPThenEval extends Command("pte", CmdPEval >> BuildCFG >> Eval) {
+  val help =
+    "(WIP) peval-then-eval an ECMAScript file using overloaded `FunctionDeclarationInstantiation`."
+  val examples = List(
+    "esmeta pte a.js                         # peval-then-eval a.js file.",
+    "esmeta pte a.js -extract:target=es2022  # peval-then-eval with es2022 spec.",
+    "esmeta pte a.js -eval:log               # peval-then-eval in the logging mode.",
+  )
+  override val targetName = "<js>+"
 }
