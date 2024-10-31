@@ -182,3 +182,19 @@ case object CmdMutate extends Command("mutate", CmdBuildCFG >> Mutate) {
     "esmeta mutate a.js -mutate:mutator=random    # use random mutator.",
   )
 }
+
+// -----------------------------------------------------------------------------
+// IR-ES Interpreter
+// -----------------------------------------------------------------------------
+/** `ir-eval` command */
+case object CmdIRInterp
+  extends Command("ir-eval", CmdBase >> IRRead >> IRPEval >> IREval) {
+  val help = "evaluate an IR-ES (ESMeta IR) file."
+  val examples = List(
+    "esmeta ir-eval a.ir                          # run a.ir (IR-ES) file.",
+    "esmeta ir-eval a.ir -ir-peval:turn-on        # run a.ir (IR-ES) file with partial-evaluation.",
+    "esmeta ir-eval a.ir -ir-eval:format          # run a.ir (IR-ES) file and format it in a cannonical form.",
+  )
+  override val targetName = "<ir>+"
+
+}
