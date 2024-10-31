@@ -4,6 +4,7 @@ import esmeta.util.BaseUtils.*
 import esmeta.cfg.*
 import esmeta.ir.{Func => IRFunc, *}
 import esmeta.ir.util.AllocSiteSetter
+import esmeta.peval.{SpecializedFuncs}
 import scala.collection.mutable.{ListBuffer, Map => MMap}
 
 /** CFG builder */
@@ -12,6 +13,61 @@ object CFGBuilder:
     program: Program,
     log: Boolean = false,
   ): CFG = new CFGBuilder(program).result
+
+  /* incremental CFG build for FDI */
+  def byIncremental(
+    from: CFG,
+    newFs: List[IRFunc],
+    newSfMap: SpecializedFuncs,
+    log: Boolean = false,
+  ): Option[CFG] = for {
+    fromBuilder <- from.cfgBuilder
+    builder = new CFGBuilder(from.program)
+  } yield {
+    // XXX asiteSetter is not needed, right?
+    builder.fidCount = fromBuilder.fidCount
+    builder.nidCount = fromBuilder.nidCount
+
+    for { f <- newFs } builder.translate(f)
+
+    val newCfgFs = List.from(builder.funcs)
+    builder.funcs.prependAll(fromBuilder.funcs)
+    val totalCfgFs = newCfgFs ::: from.funcs
+    val totalIRFs = newCfgFs.map(_.irFunc) ::: from.program.funcs
+    val program = Program(totalIRFs, from.program.spec)
+    val cfg = CFG(totalCfgFs)
+
+    cfg.computeMain = (_) => from.main
+    cfg.computeFuncMap = (_) =>
+      from.funcMap ++ (for (func <- newCfgFs)
+        yield func.id -> func)
+    cfg.computeFnameMap = (_) =>
+      from.fnameMap ++ (for (func <- newCfgFs)
+        yield func.irFunc.name -> func)
+    cfg.computeNodes = (_) => from.nodes ++ newCfgFs.flatMap(_.nodes)
+    cfg.computeNodesMap = (_) =>
+      from.nodeMap ++ (for {
+        func <- newCfgFs; node <- func.nodes
+      } yield node.id -> node)
+    cfg.computeFuncOf = (_) =>
+      from.funcOf ++ (for {
+        func <- newCfgFs; node <- func.nodes
+      } yield node -> func)
+
+    cfg.program = program
+    cfg.sfMap = from.sfMap match
+      case None => Some(newSfMap)
+      case Some(oldSfMap) =>
+        Some(SpecializedFuncs((for {
+          funcName <- oldSfMap.map.keys ++ newSfMap.map.keys
+        } yield {
+          val oldF = oldSfMap.map.getOrElse(funcName, PartialFunction.empty)
+          val newF = newSfMap.map.getOrElse(funcName, PartialFunction.empty)
+          funcName -> newF.orElse(oldF)
+        }).toMap))
+    cfg.cfgBuilder = Some(builder)
+    cfg
+  }
 
 /** extensible helper of CFG builder */
 class CFGBuilder(
@@ -25,6 +81,8 @@ class CFGBuilder(
     for { f <- program.funcs } translate(f)
     val cfg = CFG(funcs.toList)
     cfg.program = program
+    cfg.sfMap = Some(program.sfMap)
+    cfg.cfgBuilder = Some(this)
     cfg
 
   /** translate IR function to cfg function */

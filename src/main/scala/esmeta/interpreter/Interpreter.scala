@@ -26,6 +26,7 @@ class Interpreter(
   val detail: Boolean = false,
   val logPW: Option[PrintWriter] = None,
   val timeLimit: Option[Int] = None,
+  val useSpecialized: Boolean = true,
 ) {
   import Interpreter.*
 
@@ -134,14 +135,25 @@ class Interpreter(
       eval(fexpr) match
         case clo @ Clo(func, captured) =>
           val vs = args.map(eval)
+          val targetFunc = getSpecialized(func, vs, st)
           val newLocals =
-            getLocals(func.irFunc.params, vs, call, clo) ++ captured
+            getLocals(
+              targetFunc.irFunc.params,
+              vs,
+              call,
+              clo,
+            ) ++ captured
           st.callStack ::= CallContext(st.context, lhs)
-          st.context = Context(func, newLocals)
+          st.context = Context(targetFunc, newLocals)
         case cont @ Cont(func, captured, callStack) => {
           val vs = args.map(eval)
           val newLocals =
-            getLocals(func.irFunc.params, vs, call, cont) ++ captured
+            getLocals(
+              func.irFunc.params,
+              vs,
+              call,
+              cont,
+            ) ++ captured
           st.callStack = callStack.map(_.copied)
           st.context = Context(func, newLocals)
         }
@@ -152,14 +164,15 @@ class Interpreter(
           getSdo((syn, method)) match
             case Some((ast0, sdo)) =>
               val vs = args.map(eval)
+              val targetFunc = getSpecialized(sdo, vs, st)
               val newLocals = getLocals(
-                sdo.irFunc.params,
+                targetFunc.irFunc.params,
                 AstValue(ast0) :: vs,
                 call,
-                Clo(sdo, Map()),
+                Clo(targetFunc, Map()),
               )
               st.callStack ::= CallContext(st.context, lhs)
-              st.context = Context(sdo, newLocals)
+              st.context = Context(targetFunc, newLocals)
             case None => throw InvalidAstField(syn, Str(method))
         case lex: Lexical =>
           setCallResult(lhs, Interpreter.eval(lex, method))
@@ -357,6 +370,20 @@ class Interpreter(
     map
   }
 
+  def getSpecialized(func: Func, vs: Iterable[Value], st: State): Func = {
+    if (!useSpecialized) then func
+    else
+      (for {
+        oName <- cfg.sfMap.flatMap(_.getByArgs(func.name, vs, st))
+        newFunc = cfg.getFunc(oName);
+        () = if (log) then
+          pw.println(
+            s"[Interpreter] overloaded ${func.name} ~> ${oName}",
+          )
+          pw.flush
+      } yield newFunc).getOrElse(func)
+  }
+
   /** transition for references */
   def eval(ref: Ref): RefTarget = ref match
     case x: Var => VarTarget(x)
@@ -403,7 +430,9 @@ object Interpreter {
     detail: Boolean = false,
     logPW: Option[PrintWriter] = None,
     timeLimit: Option[Int] = None,
-  ): State = new Interpreter(st, log, detail, logPW, timeLimit).result
+    useSpecialized: Boolean = true,
+  ): State =
+    new Interpreter(st, log, detail, logPW, timeLimit, useSpecialized).result
 
   /** transition for lexical SDO */
   def eval(lex: Lexical, sdoName: String): Value = {

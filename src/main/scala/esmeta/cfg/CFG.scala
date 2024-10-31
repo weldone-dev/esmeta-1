@@ -2,10 +2,12 @@ package esmeta.cfg
 
 import esmeta.*
 import esmeta.cfg.util.*
+import esmeta.cfgBuilder.CFGBuilder
 import esmeta.error.*
 import esmeta.es.Initialize
-import esmeta.ir.Program
+import esmeta.ir.{Func as IRFunc, Program}
 import esmeta.parser.{ESParser, AstFrom}
+import esmeta.peval.{SpecializedFuncs}
 import esmeta.spec.{Spec, Grammar}
 import esmeta.ty.*
 import esmeta.util.*
@@ -23,8 +25,38 @@ case class CFG(
   /** backward edge to a program */
   var program: ir.Program = ir.Program()
 
+  /** backward edge to a CFG builder, for incremental build */
+  var cfgBuilder: Option[CFGBuilder] = None
+
+  /** specialized function map */
+  var sfMap: Option[SpecializedFuncs] = None
+
+  var computeMain: (List[Func]) => Func = (fs: List[Func]) =>
+    getUnique(fs, _.irFunc.main, "main function")
+
+  var computeFuncMap: (List[Func]) => Map[Int, Func] = (fs: List[Func]) =>
+    (for (func <- fs) yield func.id -> func).toMap
+
+  var computeFnameMap: (List[Func]) => Map[String, Func] = (fs: List[Func]) =>
+    (for (func <- fs) yield func.irFunc.name -> func).toMap
+
+  var computeNodes: (List[Func]) => List[Node] = (fs: List[Func]) =>
+    fs.flatMap(_.nodes)
+
+  var computeNodesMap: (List[Func]) => Map[Int, Node] = (fs: List[Func]) =>
+    (for {
+      func <- fs
+      node <- func.nodes
+    } yield node.id -> node).toMap
+
+  var computeFuncOf: (List[Func]) => Map[Node, Func] = (fs: List[Func]) =>
+    (for {
+      func <- fs
+      node <- func.nodes
+    } yield node -> func).toMap
+
   /** the main function */
-  lazy val main: Func = getUnique(funcs, _.irFunc.main, "main function")
+  lazy val main: Func = computeMain(funcs)
 
   /** an ECMAScript parser */
   lazy val esParser: ESParser = program.esParser
@@ -34,27 +66,19 @@ case class CFG(
   lazy val init: Initialize = new Initialize(this)
 
   /** mapping from fid to functions */
-  lazy val funcMap: Map[Int, Func] =
-    (for (func <- funcs) yield func.id -> func).toMap
+  lazy val funcMap: Map[Int, Func] = computeFuncMap(funcs)
 
   /** mapping from function names to functions */
-  lazy val fnameMap: Map[String, Func] =
-    (for (func <- funcs) yield func.irFunc.name -> func).toMap
+  lazy val fnameMap: Map[String, Func] = computeFnameMap(funcs)
 
   /** all nodes */
-  lazy val nodes: List[Node] = funcs.flatMap(_.nodes)
+  lazy val nodes: List[Node] = computeNodes(funcs)
 
   /** mapping from nid to nodes */
-  lazy val nodeMap: Map[Int, Node] = (for {
-    func <- funcs
-    node <- func.nodes
-  } yield node.id -> node).toMap
+  lazy val nodeMap: Map[Int, Node] = computeNodesMap(funcs)
 
   /** mapping from nodes to functions */
-  lazy val funcOf: Map[Node, Func] = (for {
-    func <- funcs
-    node <- func.nodes
-  } yield node -> func).toMap
+  lazy val funcOf: Map[Node, Func] = computeFuncOf(funcs)
 
   /** get a type model */
   lazy val tyModel: TyModel = spec.tyModel

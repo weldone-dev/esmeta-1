@@ -33,6 +33,7 @@ case object Eval extends Phase[CFG, State] {
     log = config.log,
     detail = config.detail,
     timeLimit = config.timeLimit,
+    useSpecialized = config.useSpecialized,
   )
 
   def defaultConfig: Config = Config()
@@ -57,11 +58,17 @@ case object Eval extends Phase[CFG, State] {
       BoolOption((c, b) => { c.log ||= b; c.detail = b }),
       "turn on logging mode with detailed information.",
     ),
+    (
+      "no-specialized",
+      BoolOption((c, b) => { c.useSpecialized = !b }),
+      "turn off function overloading by specialized functions.",
+    ),
   )
   case class Config(
     var timeLimit: Option[Int] = None,
     var multiple: Boolean = false,
     var log: Boolean = false,
     var detail: Boolean = false,
+    var useSpecialized: Boolean = true,
   )
 }
