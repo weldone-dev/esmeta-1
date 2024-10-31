@@ -15,6 +15,9 @@ sealed abstract class OptionKind[T] {
 
   /** a list of argument regular expressions */
   def argRegexList(name: String): List[ArgRegex[T]]
+
+  /** completions for value T */
+  def completions: Iterable[String]
 }
 
 /** boolean options */
@@ -25,26 +28,38 @@ case class BoolOption[T](assign: (T, Boolean) => Unit) extends OptionKind[T] {
     (("-" + name).r, "".r, (c, _) => assign(c, true)),
     (("-" + name + "=").r, ".*".r, (c, _) => throw ExtraArgError(name)),
   )
+  def completions = List("true", "false")
 }
 
 /** number options */
-case class NumOption[T](assign: (T, Int) => Unit) extends OptionKind[T] {
+case class NumOption[T](
+  assign: (T, Int) => Unit,
+  prefer: Iterable[Int] = Iterable.empty,
+) extends OptionKind[T] {
   def postfix: String = "={number}"
   def argRegexList(name: String): List[ArgRegex[T]] = List(
     (("-" + name + "=").r, "-?[0-9]+".r, (c, s) => assign(c, s.toInt)),
     (("-" + name + "=").r, ".*".r, (_, _) => throw NoNumArgError(name)),
     (("-" + name).r, "".r, (_, _) => throw NoNumArgError(name)),
   )
+
+  def completions = prefer.map(_.toString)
 }
 
 /** string options */
-case class StrOption[T](assign: (T, String) => Unit) extends OptionKind[T] {
+case class StrOption[T](
+  assign: (T, String) => Unit,
+  prefer: Iterable[String] = Iterable.empty,
+) extends OptionKind[T] {
   def postfix: String = "={string}"
   def argRegexList(name: String): List[ArgRegex[T]] = List(
     (("-" + name + "=").r, ".+".r, (c, s) => assign(c, s)),
     (("-" + name + "=").r, ".*".r, (_, _) => throw NoStrArgError(name)),
     (("-" + name).r, "".r, (_, _) => throw NoStrArgError(name)),
   )
+
+  def completions = prefer
+
 }
 
 /** string list options */
@@ -56,4 +71,6 @@ case class StrListOption[T](assign: (T, List[String]) => Unit)
     (("-" + name + "=").r, ".*".r, (_, _) => throw NoStrArgError(name)),
     (("-" + name).r, "".r, (_, _) => throw NoStrArgError(name)),
   )
+
+  def completions = Nil
 }

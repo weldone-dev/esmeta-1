@@ -66,6 +66,24 @@ object GenCompl {
       // completion for options
       app :> "# completion for options"
       (app :> "").wrap("case \"${cur}\" in", "esac") {
+        for {
+          phase <- phases
+          (optName, opt, _) <- phase.options
+          optCompls <- (
+            opt.completions.isEmpty match
+              case true  => None
+              case false => Some(phase.name, optName, opt.completions)
+          )
+        } do {
+          (app :> "").wrap(s"-${optCompls._1}:${optCompls._2}=*)", "") {
+            app :> "COMPREPLY=($(compgen -W "
+            app >> "\"" >> optCompls._3
+              .map(v => s"-${optCompls._1}:${optCompls._2}=${v}")
+              .mkString(" ") >> "\"))"
+            app :> "return 0"
+            app :> ";;"
+          }
+        }
         (app :> "").wrap("-*)", "") {
           (app :> "").wrap("case \"${cmd}\" in", "esac") {
             for (cmd <- commands) (app :> "").wrap(cmd.name + ")", "") {
