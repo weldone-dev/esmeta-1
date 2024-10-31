@@ -8,8 +8,11 @@ import esmeta.util.BaseUtils.*
 /** ESMeta top-level object */
 object ESMeta extends Git(BASE_DIR) {
 
+  var ENTRY_COMMAND: Option[String] = None
+
   /** the main entry point of ESMeta. */
   def main(tokens: Array[String]): Unit = try
+    ENTRY_COMMAND = Some(tokens.mkString(" "))
     tokens.toList match
       case Nil                                        => println(welcome)
       case List("--version" | "-version" | "version") => println(VERSION)

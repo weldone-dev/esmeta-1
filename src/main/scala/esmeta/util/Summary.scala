@@ -1,5 +1,6 @@
 package esmeta.util
 
+import esmeta.ESMeta.ENTRY_COMMAND
 import esmeta.error.NotSupported.*
 import esmeta.util.Appender.Rule
 import esmeta.util.Summary.*
@@ -82,6 +83,7 @@ case class Summary(
       else "PASS"
     case _ =>
       val app = Appender()
+      app >> s"- command: ${ENTRY_COMMAND.getOrElse("<empty command>")}"
       app >> f"- time: $time"
       (app :> "total" -> total).wrap("", "") {
         if (notSupportedCount > 0) app :> "not-supported (N)" -> notSupported
