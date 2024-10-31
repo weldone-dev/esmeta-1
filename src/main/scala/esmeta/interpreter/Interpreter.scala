@@ -337,7 +337,6 @@ class Interpreter(
     caller: Call,
     callee: Callable,
   ): MMap[Local, Value] = {
-    val func = callee.func
     val map = MMap[Local, Value]()
     @tailrec
     def aux(ps: List[Param], as: List[Value]): Unit = (ps, as) match {
