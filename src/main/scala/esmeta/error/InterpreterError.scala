@@ -118,3 +118,13 @@ case class AssertionFail(expr: Expr)
   extends InterpreterError(s"assertion failure: $expr")
 case class OutOfRange(list: ListObj, k: Int)
   extends InterpreterError(s"out of range: $k of $list")
+
+// runtime type mismatch
+class RuntimeTypeMismatch(tyAnnot: String, value: Value, ty: Ty)
+  extends InterpreterError(
+    s"Runtime ($tyAnnot) type mismatch: $value is not a value of $ty",
+  )
+case class ParamTypeMismatch(arg: Value, paramTy: Ty)
+  extends RuntimeTypeMismatch("parameter", arg, paramTy)
+case class ReturnTypeMismatch(ret: Value, retTy: Ty)
+  extends RuntimeTypeMismatch("return", ret, retTy)

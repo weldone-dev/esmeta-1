@@ -132,6 +132,7 @@ case object CmdEval extends Command("eval", CmdBuildCFG >> Eval) {
     "esmeta eval a.js                         # eval a.js file.",
     "esmeta eval a.js -extract:target=es2022  # eval with es2022 spec.",
     "esmeta eval a.js -eval:log               # eval in the logging mode.",
+    "esmeta eval a.js -eval:type-check        # eval with runtime type checking.",
   )
   override val targetName = "<js>+"
 }

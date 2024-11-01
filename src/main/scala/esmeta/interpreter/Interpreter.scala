@@ -26,6 +26,7 @@ class Interpreter(
   val detail: Boolean = false,
   val logPW: Option[PrintWriter] = None,
   val timeLimit: Option[Int] = None,
+  val tyCheck: Boolean = false,
 ) {
   import Interpreter.*
 
@@ -80,6 +81,11 @@ class Interpreter(
           false
         case CallContext(ctxt, retId) :: rest =>
           val (ret, value) = st.context.retVal.getOrElse(throw NoReturnValue)
+          if tyCheck then
+            val retTy = ctxt.func.irFunc.retTy.ty
+            println(s"[dbg] value: $value, retTy: $retTy") // !debug
+            if !retTy.contains(value, st) then
+              throw ReturnTypeMismatch(value, retTy)
           st.context = ctxt
           st.callStack = rest
           setCallResult(retId, value)
@@ -348,6 +354,11 @@ class Interpreter(
           case _: Cont =>
           case _       => throw RemainingArgs(args)
       case (param :: pl, arg :: al) =>
+        if tyCheck then
+          val paramTy = param.ty.ty.toValue
+          println(s"[dbg] arg: $arg, paramTy: $paramTy") // !debug
+          if !paramTy.contains(arg, st) then
+            throw ParamTypeMismatch(arg, paramTy)
         map += param.lhs -> arg
         aux(pl, al)
     }
@@ -399,7 +410,8 @@ object Interpreter {
     detail: Boolean = false,
     logPW: Option[PrintWriter] = None,
     timeLimit: Option[Int] = None,
-  ): State = new Interpreter(st, log, detail, logPW, timeLimit).result
+    tyCheck: Boolean = false,
+  ): State = new Interpreter(st, log, detail, logPW, timeLimit, tyCheck).result
 
   /** transition for lexical SDO */
   def eval(lex: Lexical, sdoName: String): Value = {
