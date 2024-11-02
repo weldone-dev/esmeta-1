@@ -113,6 +113,7 @@ case class Test262(
     useCoverage: Boolean = false,
     timeLimit: Option[Int] = None, // default: no limit
     concurrent: CP = CP.Single,
+    tyCheck: Boolean = false,
     verbose: Boolean = false,
   ): Summary = {
     // extract tests from paths
@@ -159,7 +160,14 @@ case class Test262(
         val filename = test.path
         val st =
           if (!useCoverage)
-            evalFile(filename, log && !multiple, detail, Some(logPW), timeLimit)
+            evalFile(
+              filename,
+              log && !multiple,
+              detail,
+              Some(logPW),
+              timeLimit,
+              tyCheck,
+            )
           else cov.run(filename)
         val returnValue = st(GLOBAL_RESULT)
         if (returnValue != Undef) throw InvalidExit(returnValue)
@@ -238,6 +246,7 @@ case class Test262(
     detail: Boolean = false,
     logPW: Option[PrintWriter] = None,
     timeLimit: Option[Int] = None,
+    tyCheck: Boolean = false,
   ): State =
     val ast = loadTest(filename)
     val code = ast.toString(grammar = Some(cfg.grammar)).trim
@@ -248,6 +257,7 @@ case class Test262(
       detail = detail,
       logPW = logPW,
       timeLimit = timeLimit,
+      tyCheck = tyCheck,
     )
 
   // logging mode for tests
