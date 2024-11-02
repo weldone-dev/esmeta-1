@@ -13,6 +13,7 @@ case class Func(
   params: List[Param],
   retTy: Type,
   body: Inst,
+  trueName: Option[String] = None, // name of original func if pevaled
   var algo: Option[Algorithm] = None,
 ) extends IRElem {
 

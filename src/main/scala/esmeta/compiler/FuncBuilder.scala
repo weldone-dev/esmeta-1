@@ -26,6 +26,7 @@ case class FuncBuilder(
     params,
     retTy,
     body,
+    None,
     Some(algo),
   )
 

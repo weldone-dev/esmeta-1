@@ -597,6 +597,7 @@ class PartialEvaluator private (
           newParams,
           func.retTy,
           simplifiedNewBody,
+          Some(func.name),
           func.algo,
         ),
         newPst,
