@@ -1,8 +1,15 @@
-package esmeta.peval.simplifier
+package esmeta.peval.util
 
 import esmeta.ir.*
 
-object InstFlattener:
+object IRSimplifier {
+  val flat = InstFlattener.apply
+  val syntactic = RemoveUnusedDef.apply
+  val semantic = UseDef.apply
+}
+
+object InstFlattener {
+
   def apply(inst: Inst): Inst = inst match
     case IIf(cond, thenInst, elseInst) =>
       IIf(cond, apply(thenInst), apply(elseInst)).passCmt(from = inst)
@@ -18,3 +25,10 @@ object InstFlattener:
     case ISeq(insts) => insts.map(apply)
     case i           => List(apply(i))
   }.flatten)
+}
+
+object UseDef {
+
+  // WIP
+  def apply(inst: Inst): Inst = inst
+}

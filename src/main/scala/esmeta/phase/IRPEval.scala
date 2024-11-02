@@ -12,6 +12,7 @@ import esmeta.es.*
 // TODO sort imports
 import esmeta.peval.PartialEvaluator
 import esmeta.peval.pstate.{PContext, PState}
+import esmeta.peval.Unknown.get
 
 /** `ir-peval` phase */
 case object IRPEval extends Phase[Program, Program] {
@@ -32,17 +33,14 @@ case object IRPEval extends Phase[Program, Program] {
         prog.funcs.map {
           case f if !f.params.isEmpty => f
           case f => {
-            val (renamer, pst) = PartialEvaluator.prepare(f)
-            val pev = PartialEvaluator(
-              program = prog,
-              log = config.log,
-              detail = false, // TODO add to Config
-              simplifyLevel = config.simplify,
-              logPW = Some(getPrintWriter(s"$IRPEVAL_LOG_DIR/log")),
-              timeLimit = None,
-              renamer = renamer,
-            )
-            val (newFunc, _) = pev.run(f, pst, None)
+            val newFunc =
+              PartialEvaluator.run(prog, f) { (_renamer, _pst) => }(
+                log = config.log,
+                detail = false, // TODO add to Config
+                simplifyLevel = config.simplify,
+                logPW = Some(getPrintWriter(s"$IRPEVAL_LOG_DIR/log")),
+                timeLimit = None,
+              )
             if (config.log) then
               val pw = getPrintWriter(s"$IRPEVAL_LOG_DIR/${f.name}.ir")
               pw.println(newFunc.toString())

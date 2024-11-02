@@ -52,53 +52,21 @@ case object PEval extends Phase[Program, Program] {
       AstHelper.getPEvalTargetAsts(ast)
     }
 
-    /* NOTE: globals are not modified, so we can use the same globals for all overloads
-    val init = new Initialize(cfg)
-    val globals = for {
-      (x, v) <- init.initGlobal
-      pv = v match
-        case _: Addr => Unknown
-        case _       => Known(v)
-    } yield x -> pv */
-
-    val overloads = fds.zipWithIndex.flatMap((fd, idx) =>
-
-      val (renamer, pst) =
-        PartialEvaluator.ForECMAScript.prepareForOCEB(target, fd);
-
-      val peval = PartialEvaluator(
-        program = program,
-        log = config.log,
-        detail = config.detail,
-        simplifyLevel = config.simplify,
-        renamer = renamer,
-      )
-
-      val pevalResult = Try(
-        peval.run(
-          target,
-          pst,
-          Some(s"${target.name}PEvaled${idx}"),
-        ),
-      ).map(_._1)
-
-      pevalResult match
-        case Success(newFunc) =>
-          Some((newFunc, fd))
-        case Failure(exception) =>
-          print("Failed to run PEval: ")
-          exception.printStackTrace();
-          None,
+    val overloads = ESPartialEvaluator.peval(
+      program,
+      fds.zipWithIndex.map((fd, idx) =>
+        (fd, Some(s"${target.name}PEvaled${idx}")),
+      ),
     )
 
     if (config.log) then
       val pw = getPrintWriter(s"$PEVAL_LOG_DIR/summary")
       pw.println(s"Found ${fds.length} function declarations in ${filename}");
-      pw.println(s"Generated ${overloads.length} overloads (should be 100%)");
+      pw.println(s"Generated ${overloads.size} overloads (should be 100%)");
       pw.flush
       dumpTo(PEVAL_LOG_DIR, overloads.map(_._1));
 
-    val sfMap = PartialEvaluator.ForECMAScript.genMap(overloads)
+    val sfMap = ESPartialEvaluator.genMap(overloads)
     val newProg = Program(overloads.map(_._1) ::: program.funcs, program.spec)
     newProg.sfMap = sfMap
     newProg

@@ -35,10 +35,14 @@ object PEvalIRTinyTest {
       prog.funcs.map {
         case f if !f.params.isEmpty => f
         case f => {
-          val (renamer, pst) = PartialEvaluator.prepare(f)
-          PartialEvaluator(program = prog, simplifyLevel = 0, renamer = renamer)
-            .run(f, pst, None)
-            ._1
+          PartialEvaluator
+            .run(prog, f) { (_renamer, _pst) => /* do nothing */ }(
+              log = false,
+              detail = false,
+              simplifyLevel = 0,
+              logPW = None,
+              timeLimit = None,
+            )
         }
       },
       prog.spec,

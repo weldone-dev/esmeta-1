@@ -26,8 +26,6 @@ object PEvalTest {
 // ---------------------------------------------------------------------------
 // parse ES codes
   lazy val scriptParser: AstFrom = ESMetaTest.spec.scriptParser
-  def parse(str: String): Ast = scriptParser.from(str)
-  def parseFile(filename: String): Ast = scriptParser.fromFile(filename)
 
 // ---------------------------------------------------------------------------
 // interpreter helpers
@@ -62,32 +60,8 @@ object PEvalTest {
   ): State =
     eval(cfg, readFile(filename), checkAfter, cachedAst, Some(filename))
 
-// ---------------------------------------------------------------------------
-// analyzer helpers
-// ---------------------------------------------------------------------------
-
-// tests for ES parser
-  def parseTest(ast: Ast): Ast =
-    val newAst = parse(ast.toString(grammar = Some(ESMetaTest.grammar)))
-    assert(ast == newAst)
-    ast
-  def parseTest(str: String): Ast = parseTest(parse(str))
-  def parseFileTest(filename: String): Ast = parseTest(parseFile(filename))
-
 // tests for ES interpreter
   def checkExit(st: State): st.type = st(GLOBAL_RESULT) match
     case Undef => st
     case v     => fail(s"return not undefined: $v")
-  def evalTest(
-    cfg: CFG,
-    str: String,
-    checkAfter: List[NormalInst] = Nil,
-    cachedAst: Option[Ast] = None,
-  ): State = checkExit(eval(cfg, str, checkAfter, cachedAst))
-  def evalTestFile(
-    cfg: CFG,
-    filename: String,
-    checkAfter: List[NormalInst] = Nil,
-    cachedAst: Option[Ast] = None,
-  ): State = checkExit(evalFile(cfg, filename, checkAfter, cachedAst))
 }

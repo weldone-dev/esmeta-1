@@ -30,30 +30,14 @@ class PEvalESSmallTest extends PEvalTest {
 
       if !decls.isEmpty then {
 
-        val overloads = decls.zipWithIndex.flatMap((fd, idx) =>
-
-          val (renamer, pst) =
-            PartialEvaluator.ForECMAScript.prepareForOCEB(target, fd);
-
-          val peval = PartialEvaluator(
-            program = ESMetaTest.program,
-            renamer = renamer,
-          )
-
-          val pevalResult = Try(
-            peval.run(
-              target,
-              pst,
-              Some(s"${target.name}${idx}"),
-            ),
-          ).map(_._1)
-
-          pevalResult match
-            case Success(newFunc)   => Some((newFunc, fd))
-            case Failure(exception) => fail(s"peval failed for FDI"), // None
+        val overloads = ESPartialEvaluator.peval(
+          ESMetaTest.program,
+          decls.zipWithIndex.map((fd, idx) =>
+            (fd, Some(s"${target.name}${idx}")),
+          ),
         )
 
-        val sfMap = PartialEvaluator.ForECMAScript.genMap(overloads)
+        val sfMap = ESPartialEvaluator.genMap(overloads)
         val newCFG = CFGBuilder
           .byIncremental(ESMetaTest.cfg, overloads.map(_._1), sfMap)
           .getOrElse(fail("Cfg incremental build fail"))

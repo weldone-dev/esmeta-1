@@ -17,7 +17,11 @@ import esmeta.util.{ConcurrentPolicy => CP}
 import esmeta.util.SystemUtils.*
 import java.io.PrintWriter
 import java.util.concurrent.TimeoutException
-import esmeta.peval.{ORDINARY_CALL_EVAL_BODY, PartialEvaluator}
+import esmeta.peval.{
+  ORDINARY_CALL_EVAL_BODY,
+  PartialEvaluator,
+  ESPartialEvaluator,
+}
 import esmeta.peval.util.{AstHelper, Test262PEvalPolicy}
 
 import java.nio.file.FileAlreadyExistsException
@@ -58,7 +62,7 @@ case class Test262(
 
   lazy val cfgWithPEvaledHarness =
     val target = cfg.fnameMap.getOrElse(ORDINARY_CALL_EVAL_BODY, ???).irFunc
-    val overloads = PartialEvaluator.ForECMAScript.pevalForOCEB(
+    val overloads = ESPartialEvaluator.peval(
       program = cfg.program,
       decls = AstHelper
         .getPEvalTargetAsts(mergeStmt(allHarnesses))
@@ -67,9 +71,7 @@ case class Test262(
           case (decl, idx) => (decl, Some(s"${target.name}PEvaled${idx}"))
         },
     )
-    val sfMap = PartialEvaluator.ForECMAScript.genMap(overloads)(using
-      msg = Some("PEval harness called.."),
-    )
+    val sfMap = ESPartialEvaluator.genMap(overloads)
     CFGBuilder
       .byIncremental(cfg, overloads.map(_._1), sfMap)
       .getOrElse(???) // Cfg incremental build fail
@@ -335,7 +337,7 @@ case class Test262(
             Initialize(cfgWithPEvaledHarness, code, Some(ast), Some(filename))
           else defaultSetting
         } else
-          val overloads = PartialEvaluator.ForECMAScript.pevalForOCEB(
+          val overloads = ESPartialEvaluator.peval(
             program = cfg.program,
             decls = AstHelper.getPEvalTargetAsts(fileAst).zipWithIndex.map {
               case (decl, idx) =>
@@ -354,7 +356,7 @@ case class Test262(
             }
 
           val sfMap =
-            PartialEvaluator.ForECMAScript.genMap(overloads)
+            ESPartialEvaluator.genMap(overloads)
           // 'cfgWithPEvaledHarness' is computed
           val newCfg =
             CFGBuilder

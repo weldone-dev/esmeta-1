@@ -1,33 +1,26 @@
 package esmeta.peval
 
-import esmeta.{LINE_SEP, PEVAL_LOG_DIR, TEST_MODE}
-import esmeta.analyzer.*
-import esmeta.cfg.{Func as CFGFunc}
+import esmeta.{LINE_SEP, PEVAL_LOG_DIR}
 import esmeta.error.*
 import esmeta.error.NotSupported.{*, given}
 import esmeta.error.NotSupported.Category.{Type => _, *}
-import esmeta.interpreter.*
+import esmeta.interpreter.Interpreter
 import esmeta.ir.*
 import esmeta.es.*
-import esmeta.parser.{ESParser, ESValueParser}
 import esmeta.peval.pstate.*
-import esmeta.peval.simplifier.*
 import esmeta.peval.util.*
 import esmeta.state.{BigInt, *}
 import esmeta.spec.{Spec}
 import esmeta.util.BaseUtils.{error => _, *}
 import esmeta.util.SystemUtils.*
 import java.io.PrintWriter
-import java.math.MathContext.DECIMAL128
 import scala.annotation.tailrec
 import scala.collection.mutable.{Map as MMap, Set as MSet}
 import scala.math.{BigInt as SBigInt}
 import scala.util.{Try, Success, Failure}
 
-import scala.collection.immutable.SortedMap
-
-/** extensible helper of IR interpreter with a CFG */
-class PartialEvaluator(
+/** IR PartialEvaluator */
+class PartialEvaluator private (
   val program: Program,
   val log: Boolean = false,
   val detail: Boolean = false,
@@ -578,7 +571,7 @@ class PartialEvaluator(
         (ISeq(assigns :: newInst :: Nil), newPst)
 
   /** final state */
-  def run(
+  def compute(
     func: Func,
     pst: PState,
     newName: Option[String] = None,
@@ -592,8 +585,8 @@ class PartialEvaluator(
       val result @ (newBody, newPst) = peval(inst, pst)(using MSet.empty)
       val simplifiedNewBody = simplifyLevel match
         case 0 => newBody
-        case 1 => InstFlattener(newBody)
-        case 2 => InstFlattener(RemoveUnusedDef(newBody))
+        case 1 => IRSimplifier.flat(newBody)
+        case 2 => IRSimplifier.flat(IRSimplifier.syntactic(newBody))
         case 3 => ??? // InstFlattener(NoLiterals(newBody)) // TODO
 
       (
@@ -612,11 +605,8 @@ class PartialEvaluator(
     timeLimit,
   )
 
-  /** ECMAScript parser */
-  lazy val esParser: ESParser = program.esParser
-
-  /** get initial local variables */
-  def setLocals[T <: PCallable](
+  /** set initial local variables */
+  private def setLocals[T <: PCallable](
     at: PContext,
     params: List[Param],
     args: List[(Predict[Value], Expr)],
@@ -660,15 +650,6 @@ class PartialEvaluator(
   // private helpers
   // ---------------------------------------------------------------------------
 
-  /** type model */
-  private def tyModel = program.tyModel
-
-  /** spec */
-  private def spec = program.spec
-
-  /** itereration count */
-  private var iter = 0
-
   /** logging */
   private lazy val pw: PrintWriter =
     logPW.getOrElse(getPrintWriter(s"$PEVAL_LOG_DIR/log"))
@@ -676,225 +657,41 @@ class PartialEvaluator(
   /** cache to get syntax-directed operation (SDO) */
   private val getSdo =
     cached[(Ast, String), Option[(Ast, Func)]](
-      _.getSdo[Func](_)(using spec, funcMap),
+      _.getSdo[Func](_)(using program.spec, funcMap),
     )
 
 }
 
-/** IR PartialEvaluator with a CFG */
+/** IR PartialEvaluator */
 object PartialEvaluator {
 
-  /** prepare new Renamer and PState for partial evaluation */
-  def prepare(func: Func): (Renamer, PState) = {
+  /** create new Renamer and PState for partial evaluation */
+  private def createCleanState(func: Func): (Renamer, PState) = {
     val renamer = Renamer()
     val thisCallCount = renamer.newCallCount
     val pst = PState.empty(PContext.empty(func, sensitivity = thisCallCount))
     (renamer, pst)
   }
 
-  object ForECMAScript {
-
-    def pevalForOCEB[B[_] <: Iterable[_]](
-      program: Program,
-      decls: Iterable[(ESHelper.ESFuncAst, Option[String])],
-    ): Iterable[(Func, ESHelper.ESFuncAst)] = {
-      // TODO can we optimize this?
-      val target = program.funcs
-        .find(_.name == ORDINARY_CALL_EVAL_BODY)
-        .getOrElse(
-          throw PartialEvaluatorError(
-            s"`prepareOCEB` is only callable with  ${ORDINARY_CALL_EVAL_BODY}",
-          ),
-        )
-
-      decls.map {
-        case (decl, newName) =>
-          pevalForOCEB(program, target, decl, newName)
-      }
-    }
-
-    def pevalForOCEB(
-      program: Program,
-      decl: ESHelper.ESFuncAst,
-      newName: Option[String] = None,
-    ): (Func, ESHelper.ESFuncAst) = {
-      // TODO can we optimize this?
-      val target = program.funcs
-        .find(_.name == ORDINARY_CALL_EVAL_BODY)
-        .getOrElse(
-          throw PartialEvaluatorError(
-            s"`prepareOCEB` is only callable with  ${ORDINARY_CALL_EVAL_BODY}",
-          ),
-        )
-
-      pevalForOCEB(program, target, decl, newName)
-    }
-
-    private def pevalForOCEB(
-      program: Program,
-      target: Func,
-      decl: ESHelper.ESFuncAst,
-      newName: Option[String],
-    ): (Func, ESHelper.ESFuncAst) = {
-      val (renamer, pst) =
-        PartialEvaluator.ForECMAScript.prepareForOCEB(target, decl);
-
-      val peval = PartialEvaluator(
-        program = program,
-        renamer = renamer,
-        simplifyLevel = 2,
-      )
-
-      val pevalResult = Try(
-        peval.run(target, pst, newName),
-      ).map(_._1)
-
-      pevalResult.map((_, decl)) match
-        case Success(v)         => v
-        case Failure(exception) => throw exception
-    }
-
-    /** create new PState for p-evaluating `OrdinaryCallEvaluateBody`
-      *
-      * @param func
-      *   ir function, must be `FunctionDeclarationInstantation`.
-      * @param esFuncDecl
-      *   es function declaration to use as an argument.
-      * @return
-      *   (renamer, pst, params: AstValue, funcBody : AstValue)
-      */
-    def prepareForOCEB(
-      func: Func,
-      esFuncDecl: ESHelper.ESFuncAst,
-    ) = {
-
-      if (func.name != ORDINARY_CALL_EVAL_BODY) {
-        throw PartialEvaluatorError(
-          s"`prepareOCEB` is only callable with  ${ORDINARY_CALL_EVAL_BODY}",
-        )
-      }
-
-      val (renamer, pst) = prepare(func)
-
-      val addr_func_obj_record = renamer.newAddr
-
-      pst.allocRecord(
-        addr_func_obj_record,
-        esFuncDecl.toRecordTname,
-        esFuncDecl.toRecordEntries,
-      )
-
-      pst.define(
-        renamer.get(Name("F"), pst.context),
-        Known(addr_func_obj_record),
-      )
-      pst.define(
-        renamer.get(Name("argumentsList"), pst.context),
-        Unknown,
-      );
-
-      (renamer, pst)
-    }
-
-    def genMap(
-      overloads: Iterable[(Func, ESHelper.ESFuncAst)],
-    )(using msg: Option[String] = None): SpecializedFuncs = {
-
-      // TODO : optimize finding matching overloads
-      val overloadsMap = SortedMap.from(overloads.map {
-        case (ol, fa) =>
-          (AstValue(fa.params), AstValue(fa.funcBody)) -> ol.name
-      })
-      // println(
-      // s"overloadsMap.size == overloads.size: ${overloadsMap.size == overloads.size}",
-      // )
-      // println(
-      // s"overloadsMap.size, overloads.size: ${overloadsMap.size}, ${overloads.size}",
-      // )
-      // assert()
-
-      val go =
-        (args: Iterable[Value], st: State) =>
-          for {
-            addr <- args.headOption.flatMap {
-              case addr: Addr => Some(addr)
-              case _          => None
-            }
-            record <- st(addr) match
-              case r: RecordObj => Some(r)
-              case _            => None
-            asts <- record
-              .get(Str(ESHelper.FORMAL_PARAMS))
-              .zip(record.get(Str(ESHelper.ECMASCRIPT_CODE)))
-              .flatMap {
-                case (v1: AstValue, v2: AstValue) => Some((v1, v2))
-                case _                            => None
-              }
-
-            // k <- overloadsMap.find(elem => elem._1 == asts).map(_._1)
-            // assertion, asts == key then also for .hashCode
-            // _ = assert((asts != k) || (asts.hashCode == k.hashCode))
-            (fname) <-
-              overloadsMap
-                .get(asts)
-          } yield fname
-      // TODO : optimization ?
-      val newGo: PartialFunction[(Iterable[Value], State), String] = {
-        case (args: Iterable[Value], st: State) if (go(args, st).isDefined) =>
-          go(args, st).get
-      }
-      SpecializedFuncs(
-        Map(ORDINARY_CALL_EVAL_BODY -> newGo),
-      )
-    }
-
-    import math.Ordered.orderingToOrdered
-
-    given [T: Ordering]: Ordering[Option[T]] with
-      def compare(x: Option[T], y: Option[T]): Int =
-        (x, y) match {
-          case (Some(a), Some(b)) => a.compare(b)
-          case (Some(_), None)    => 1
-          case (None, Some(_))    => -1
-          case (None, None)       => 0
-        }
-
-    given [T: Ordering]: Ordering[List[T]] with
-      def compare(x: List[T], y: List[T]): Int =
-        (x.sizeCompare(y)) match
-          case 0 =>
-            x.zip(y).foldLeft(0) {
-              case (acc, (a, b)) =>
-                a.compare(b) match
-                  case n if acc == 0 => n
-                  case _             => acc
-            }
-          case n => n
-
-    given Ordering[Ast] with
-      def compare(x: Ast, y: Ast): Int =
-        (x, y) match {
-          case (Lexical(n1, s1), Lexical(n2, s2)) =>
-            n1.compare(n2) match
-              case 0 => s1.compare(s2)
-              case n => n
-          case (Lexical(_, _), Syntactic(_, _, _, _)) => 1
-          case (Syntactic(_, _, _, _), Lexical(_, _)) => -1
-          case (Syntactic(n1, a1, r1, c1), Syntactic(n2, a2, r2, c2)) =>
-            n1.compare(n2) match
-              case 0 =>
-                a1.compare(a2) match
-                  case 0 =>
-                    r1.compare(r2) match
-                      case 0 =>
-                        c1.compare(c2)
-                      case n => n
-                  case n => n
-              case n => n
-        }
-
-    given Ordering[AstValue] with
-      def compare(x: AstValue, y: AstValue): Int =
-        x.ast.compare(y.ast)
+  def run(program: Program, func: Func)(initialize: (Renamer, PState) => Unit)(
+    log: Boolean,
+    detail: Boolean,
+    simplifyLevel: Int,
+    logPW: Option[PrintWriter],
+    timeLimit: Option[Int],
+  ) = {
+    val (renamer, pst) = createCleanState(func)
+    initialize(renamer, pst)
+    val pev = PartialEvaluator(
+      program = program,
+      log = log,
+      detail = detail,
+      simplifyLevel = simplifyLevel,
+      logPW = logPW,
+      timeLimit = timeLimit,
+      renamer = renamer,
+    )
+    pev.compute(func, pst, None)._1
   }
+
 }
