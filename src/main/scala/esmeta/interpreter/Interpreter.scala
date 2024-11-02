@@ -81,14 +81,17 @@ class Interpreter(
           false
         case CallContext(ctxt, retId) :: rest =>
           val (ret, value) = st.context.retVal.getOrElse(throw NoReturnValue)
-          if tyCheck then
-            val retTy = ctxt.func.irFunc.retTy.ty
-            println(s"[dbg] value: $value, retTy: $retTy") // !debug
-            if !retTy.contains(value, st) then
-              throw ReturnTypeMismatch(value, retTy)
           st.context = ctxt
           st.callStack = rest
           setCallResult(retId, value)
+          if (tyCheck)
+            println(s"[dbg: enter] ret type checking @ ${func.name}") // !debug
+            val retTy = func.retTy.ty
+            if !retTy.isDefined then
+              println(s"  [dbg: warn] $retTy is not defined") // !debug
+            else if (!retTy.contains(value, st))
+              throw ReturnTypeMismatch(value, retTy)
+            println(s"[dbg: exit] ret type checking @ ${func.name}") // !debug
           true
 
   /** transition for nodes */
@@ -354,15 +357,20 @@ class Interpreter(
           case _: Cont =>
           case _       => throw RemainingArgs(args)
       case (param :: pl, arg :: al) =>
-        if tyCheck then
-          val paramTy = param.ty.ty.toValue
-          println(s"[dbg] arg: $arg, paramTy: $paramTy") // !debug
-          if !paramTy.contains(arg, st) then
-            throw ParamTypeMismatch(arg, paramTy)
         map += param.lhs -> arg
         aux(pl, al)
     }
     aux(params, args)
+    if (tyCheck)
+      println(s"[dbg: enter] param type checking @ ${func.name}") // !debug
+      for ((paramTy, arg) <- func.paramTys.map(_.ty).zip(args)) {
+        println(s"  [dbg] $arg in $paramTy ?") // !debug
+        if !paramTy.isDefined then
+          println(s"  [dbg: warn] $paramTy is not defined") // !debug
+        else if (!paramTy.contains(arg, st))
+          throw ParamTypeMismatch(arg, paramTy)
+      }
+      println(s"[dbg: exit] param type checking @ ${func.name}") // !debug
     map
   }
 

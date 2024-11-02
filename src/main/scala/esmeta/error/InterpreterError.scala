@@ -122,7 +122,7 @@ case class OutOfRange(list: ListObj, k: Int)
 // runtime type mismatch
 class RuntimeTypeMismatch(tyAnnot: String, value: Value, ty: Ty)
   extends InterpreterError(
-    s"Runtime ($tyAnnot) type mismatch: $value is not a value of $ty",
+    s"runtime $tyAnnot type mismatch: $value is not a value of $ty",
   )
 case class ParamTypeMismatch(arg: Value, paramTy: Ty)
   extends RuntimeTypeMismatch("parameter", arg, paramTy)
