@@ -120,7 +120,7 @@ case class Coverage(
     val strictCode = USE_STRICT + code
 
     val isMinifierHit =
-      swcMinifyChecker.check(strictCode).map(_.diff.nonEmpty).getOrElse(false)
+      swcMinifyChecker.check(strictCode).map(_.diff).getOrElse(false)
 
     val rawStacks =
       interp.touchedNodeViews.keys

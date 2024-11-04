@@ -36,8 +36,7 @@ case object MinifyCheck extends Phase[Spec, Unit] {
     println(s"Results for ${fileName}:")
     resultA match {
       case Some(res) =>
-        println(s"Diff Number: ${res.diff.size}")
-        println(s"Diff: ${res.diff.map(ast => (ast.name, ast)).mkString(", ")}")
+        println(s"Diff: ${res.diff}")
         println(s"Original: ${res.original}")
         println(s"Minified: ${res.minified}")
       case None =>

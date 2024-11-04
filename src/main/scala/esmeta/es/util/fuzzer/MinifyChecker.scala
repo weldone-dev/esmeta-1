@@ -6,6 +6,7 @@ import esmeta.parser.ESParser
 import esmeta.spec.Spec
 import akka.http.scaladsl.model.headers.CacheDirectives.`max-age`
 import esmeta.js.minifier.Minifier
+import esmeta.js.minifier.Minifier.checkMinifyDiffSwc
 
 object MinifyChecker {
   val swcMinifyFunction: String => Option[String] = code =>
@@ -25,10 +26,8 @@ class MinifyChecker(
    */
   def check(code: String): Option[MinifyCheckResult] = minify(code).map {
     minified =>
-      val originalAst = ESParser(spec.grammar)("Script").from(code)
-      val minifiedAst = ESParser(spec.grammar)("Script").from(minified)
+      val diff = checkMinifyDiffSwc(code)
 
-      val diff = checkAstDiff(originalAst, minifiedAst)
       MinifyCheckResult(
         diff = diff,
         original = code,
@@ -95,20 +94,18 @@ class MinifyChecker(
             v(offset + k - 1) + 1
         var j = i - k
         while (
-            i < n
-            && j < m
-            && flattenedAst1(i).name == flattenedAst2(j).name
-          )
-        do
+          i < n
+          && j < m
+          && flattenedAst1(i).name == flattenedAst2(j).name
+        ) do
           i += 1
           j += 1
         v(offset + k) = i
         if (i >= n && j >= m) then return result
         if (
-            i < n && j < m
-            && flattenedAst1(i).name != flattenedAst2(j).name
-          )
-        then result = flattenedAst1(j) :: result
+          i < n && j < m
+          && flattenedAst1(i).name != flattenedAst2(j).name
+        ) then result = flattenedAst1(j) :: result
       d += 1
 
     println(s"different ast parts: ${result.map(_.name)}")
@@ -126,7 +123,7 @@ case class MinifyCheckerConfig(
 
 case class MinifyCheckResult(
   // influentialOptions: List[String], // TODO: check options that affect minification (not right now)
-  diff: List[Ast],
+  diff: Boolean,
   original: String,
   minified: String,
 )

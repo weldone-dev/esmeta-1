@@ -112,7 +112,7 @@ case object MinifyFuzz extends Phase[CFG, Coverage] {
   )
   case class Config(
     var log: Boolean = false,
-    var logInterval: Option[Int] = Some(600), // 1 minute
+    var logInterval: Option[Int] = Some(600), // 10 minute
     var out: Option[String] = None,
     var debug: Int = 0,
     var timeLimit: Option[Int] = Some(1),
