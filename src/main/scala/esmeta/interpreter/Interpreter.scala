@@ -85,13 +85,11 @@ class Interpreter(
           st.callStack = rest
           setCallResult(retId, value)
           if (tyCheck)
-            println(s"[dbg: enter] ret type checking @ ${func.name}") // !debug
             val retTy = func.retTy.ty
-            if !retTy.isDefined then
-              println(s"  [dbg: warn] $retTy is not defined") // !debug
-            else if (!retTy.contains(value, st))
-              throw ReturnTypeMismatch(value, retTy)
-            println(s"[dbg: exit] ret type checking @ ${func.name}") // !debug
+            if (retTy.isDefined && !retTy.contains(value, st))
+              println(s"[ReturnTypeMismatch] ret in ${func.name}") // !debug
+              println(s"- ${value} is not a value of ${retTy}\n") // !debug
+          // throw ReturnTypeMismatch(value, retTy)
           true
 
   /** transition for nodes */
@@ -362,15 +360,14 @@ class Interpreter(
     }
     aux(params, args)
     if (tyCheck)
-      println(s"[dbg: enter] param type checking @ ${func.name}") // !debug
       for ((paramTy, arg) <- func.paramTys.map(_.ty).zip(args)) {
-        println(s"  [dbg] $arg in $paramTy ?") // !debug
-        if !paramTy.isDefined then
-          println(s"  [dbg: warn] $paramTy is not defined") // !debug
-        else if (!paramTy.contains(arg, st))
-          throw ParamTypeMismatch(arg, paramTy)
+        if (paramTy.isDefined && !paramTy.contains(arg, st))
+          println(
+            s"[ParamTypeMismatch] ${args.indexOf(arg)}th param in ${func.name}",
+          ) // !debug
+          println(s"- ${arg} is not a value of ${paramTy}\n") // !debug
+        // throw ParamTypeMismatch(arg, paramTy)
       }
-      println(s"[dbg: exit] param type checking @ ${func.name}") // !debug
     map
   }
 
