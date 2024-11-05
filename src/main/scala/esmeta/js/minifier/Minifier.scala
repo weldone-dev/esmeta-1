@@ -48,14 +48,18 @@ object Minifier {
   def minifySwc(src: String): Try[String] = execScript(minifyCmd("swc"), src)
 
   def checkMinifyDiffSwc(code: String): Boolean =
-    val result = execScript(minifyCmd("checkDiffSwc"), code)
-    result match
-      case Success(minifiedAndDiff) =>
-        val diffResult = minifiedAndDiff.split(LINE_SEP).last
-        if diffResult == "true" then true
-        else false
-      case Failure(exception) =>
-        println(s"[minify-check] $code $exception")
-        false
-
+    try {
+      val result = execScript(minifyCmd("checkDiffSwc"), code)
+      result match {
+        case Success(minifiedAndDiff) =>
+          val diffResult = minifiedAndDiff.split(LINE_SEP).last
+          if diffResult == "true" then true
+          else false
+        case Failure(exception) =>
+          println(s"[minify-check] $code $exception")
+          false
+      }
+    } catch {
+      case err => println(s"[minify-check] $code $err"); false
+    }
 }
