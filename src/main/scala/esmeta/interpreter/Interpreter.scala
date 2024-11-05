@@ -16,7 +16,7 @@ import esmeta.TEST_MODE
 import java.io.PrintWriter
 import java.math.MathContext.DECIMAL128
 import scala.annotation.tailrec
-import scala.collection.mutable.{Map => MMap}
+import scala.collection.mutable.{Map => MMap, Set}
 import scala.math.{BigInt => SBigInt}
 
 /** extensible helper of IR interpreter with a CFG */
@@ -34,6 +34,25 @@ class Interpreter(
   lazy val result: State = timeout(
     {
       while (step) {}
+      if (tyCheck) // !debug
+        println("[Interpreter] Runtime type checking started")
+        println()
+        for ((fName, idx, value, ty) <- mismatches) {
+          if idx != -1 then
+            println(s"[ParamTypeMismatch] args[${idx}] in `${fName}`")
+          else println(s"[ReturnTypeMismatch] ret in `${fName}`")
+          println(s"- Expected type: `${ty}`")
+          println(s"- Actual value: `${value}`")
+          println()
+          value match
+            case addr: Addr =>
+              println(s"Debug: `${value}`")
+              println(s"${st(addr)}")
+            case _ =>
+          println()
+        }
+        println("[Interpreter] Runtime type checking finished")
+        println(s"[Interpreter] ${mismatches.size} mismatch(es) detected")
       if (log)
         pw.println(st)
         pw.close
@@ -87,8 +106,7 @@ class Interpreter(
           if (tyCheck)
             val retTy = func.retTy.ty
             if (retTy.isDefined && !retTy.contains(value, st))
-              println(s"[ReturnTypeMismatch] ret in ${func.name}") // !debug
-              println(s"- ${value} is not a value of ${retTy}\n") // !debug
+              mismatches.add((func.name, -1, value, retTy)) // !debug
           // throw ReturnTypeMismatch(value, retTy)
           true
 
@@ -362,10 +380,7 @@ class Interpreter(
     if (tyCheck)
       for ((paramTy, arg) <- func.paramTys.map(_.ty).zip(args)) {
         if (paramTy.isDefined && !paramTy.contains(arg, st))
-          println(
-            s"[ParamTypeMismatch] ${args.indexOf(arg)}th param in ${func.name}",
-          ) // !debug
-          println(s"- ${arg} is not a value of ${paramTy}\n") // !debug
+          mismatches.add((func.name, args.indexOf(arg), arg, paramTy)) // !debug
         // throw ParamTypeMismatch(arg, paramTy)
       }
     map
@@ -398,6 +413,9 @@ class Interpreter(
 
   /** itereration count */
   private var iter = 0
+
+  /** set for collecting mismatches (!debug) */
+  private var mismatches: Set[(String, Int, Value, Ty)] = Set()
 
   /** logging */
   private lazy val pw: PrintWriter =
