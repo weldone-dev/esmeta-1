@@ -25,6 +25,8 @@ case class Coverage(
   cp: Boolean = false,
   timeLimit: Option[Int] = None,
   logDir: Option[String] = None, // TODO: use this
+  proCrit: Int = 2,
+  demCrit: Int = 2,
 ) {
   import Coverage.{*, given}
 
@@ -36,7 +38,13 @@ case class Coverage(
     MinifyChecker(cfg.spec, MinifyChecker.swcMinifyFunction)
 
   val fsTrie =
-    new FSTrieWrapper[String](config = FSTrieConfig(maxSensitivity = kFs))
+    new FSTrieWrapper[String](
+      config = FSTrieConfig(
+        maxSensitivity = kFs,
+        promotionCriteria = proCrit,
+        demotionCriteria = demCrit,
+      ),
+    )
 
   // minimal scripts
   def minimalScripts: Set[Script] = _minimalScripts
@@ -279,7 +287,7 @@ case class Coverage(
     lazy val getNodeViewsId = orderedNodeViews.zipWithIndex.toMap
     lazy val getCondViewsId = orderedCondViews.zipWithIndex.toMap
     dumpJson(
-      CoverageConstructor(kFs, cp, timeLimit),
+      CoverageConstructor(kFs, cp, timeLimit, proCrit, demCrit),
       s"$baseDir/constructor.json",
     )
 
@@ -622,6 +630,8 @@ object Coverage {
     kFs: Int,
     cp: Boolean,
     timeLimit: Option[Int],
+    proCrit: Int,
+    demCrit: Int,
   )
 
   def fromLogSimpl(baseDir: String, cfg: CFG): Coverage =
@@ -632,7 +642,14 @@ object Coverage {
       readJson[T](s"$baseDir/$json")
 
     val con: CoverageConstructor = readJsonHere("constructor.json")
-    val cov = new Coverage(cfg, con.kFs, con.cp, con.timeLimit)
+    val cov = new Coverage(
+      cfg,
+      con.kFs,
+      con.cp,
+      con.timeLimit,
+      proCrit = con.proCrit,
+      demCrit = con.demCrit,
+    )
 
     for {
       minimal <- listFiles(s"$baseDir/minimal")

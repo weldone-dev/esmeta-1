@@ -43,6 +43,8 @@ case object MinifyFuzz extends Phase[CFG, Coverage] {
       kFs = config.kFs,
       cp = config.cp,
       init = config.init,
+      proCrit = config.proCrit,
+      demCrit = config.demCrit,
     )
 
     for (dirname <- config.out) cov.dumpToWithDetail(dirname)
@@ -109,6 +111,16 @@ case object MinifyFuzz extends Phase[CFG, Coverage] {
       StrOption((c, s) => c.init = Some(s)),
       "explicitly use the given init pool",
     ),
+    (
+      "pro-crit",
+      NumOption((c, k) => c.proCrit = k),
+      "set the promotion criterion (default: 2).",
+    ),
+    (
+      "dem-crit",
+      NumOption((c, k) => c.demCrit = k),
+      "set the demotion criterion (default: 2).",
+    ),
   )
   case class Config(
     var log: Boolean = false,
@@ -122,5 +134,7 @@ case object MinifyFuzz extends Phase[CFG, Coverage] {
     var init: Option[String] = None,
     var kFs: Int = 0,
     var cp: Boolean = false,
+    var proCrit: Int = 2,
+    var demCrit: Int = 2,
   )
 }

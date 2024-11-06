@@ -33,6 +33,8 @@ object MinifyFuzzer {
     init: Option[String] = None,
     kFs: Int = 0,
     cp: Boolean = false,
+    proCrit: Int,
+    demCrit: Int,
   ): Coverage = new MinifyFuzzer(
     cfg,
     logInterval,
@@ -44,6 +46,8 @@ object MinifyFuzzer {
     init,
     kFs,
     cp,
+    proCrit,
+    demCrit,
   ).result
 
   val logDir: String = s"$MINIFY_FUZZ_LOG_DIR/fuzz-$dateStr"
@@ -61,6 +65,8 @@ class MinifyFuzzer(
   init: Option[String] = None,
   kFs: Int = 0,
   cp: Boolean = false,
+  proCrit: Int,
+  demCrit: Int,
 ) {
   import MinifyFuzzer.*
 
@@ -105,6 +111,8 @@ class MinifyFuzzer(
     kFs = kFs,
     cp = cp,
     init = init,
+    proCrit = proCrit,
+    demCrit = demCrit,
   ) {
     override lazy val logDir = MinifyFuzzer.logDir
     override lazy val symlink = MinifyFuzzer.symlink

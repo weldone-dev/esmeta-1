@@ -32,6 +32,8 @@ class Fuzzer(
   init: Option[String] = None,
   kFs: Int = 0,
   cp: Boolean = false,
+  proCrit: Int = 2,
+  demCrit: Int = 2,
 ) {
   import Fuzzer.*
 
@@ -220,6 +222,8 @@ class Fuzzer(
       cp,
       timeLimit,
       Some(logDir),
+      proCrit = proCrit,
+      demCrit = demCrit,
     )
 
   /** target selector */
