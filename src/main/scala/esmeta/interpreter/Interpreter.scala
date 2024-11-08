@@ -37,18 +37,16 @@ class Interpreter(
       if (tyCheck) // !debug
         println("[Interpreter] Runtime type checking started")
         println()
-        for ((fName, idx, value, ty) <- mismatches) {
-          if idx != -1 then
-            println(s"[ParamTypeMismatch] args[${idx}] in `${fName}`")
+        for ((fName, idx, value, ty, state) <- mismatches) {
+          if idx.isDefined then
+            println(s"[ParamTypeMismatch] args[${idx.get}] in `${fName}`")
           else println(s"[ReturnTypeMismatch] ret in `${fName}`")
           println(s"- Expected type: `${ty}`")
           println(s"- Actual value: `${value}`")
           println()
-          value match
-            case addr: Addr =>
-              println(s"Debug: `${value}`")
-              println(s"${st(addr)}")
-            case _ =>
+          if (state.isDefined)
+            println(s"Debug: `${value}`")
+            println(s"${state.get}")
           println()
         }
         println("[Interpreter] Runtime type checking finished")
@@ -106,7 +104,12 @@ class Interpreter(
           if (tyCheck)
             val retTy = func.retTy.ty
             if (retTy.isDefined && !retTy.contains(value, st))
-              mismatches.add((func.name, -1, value, retTy)) // !debug
+              val state: Option[Obj] = value match
+                case addr: Addr => Some(st(addr))
+                case _          => None
+              mismatches.add(
+                (func.name, None, value, retTy, state),
+              ) // !debug
           // throw ReturnTypeMismatch(value, retTy)
           true
 
@@ -380,7 +383,12 @@ class Interpreter(
     if (tyCheck)
       for ((paramTy, arg) <- func.paramTys.map(_.ty).zip(args)) {
         if (paramTy.isDefined && !paramTy.contains(arg, st))
-          mismatches.add((func.name, args.indexOf(arg), arg, paramTy)) // !debug
+          val state: Option[Obj] = arg match
+            case addr: Addr => Some(st(addr))
+            case _          => None
+          mismatches.add(
+            (func.name, Some(args.indexOf(arg)), arg, paramTy, state),
+          ) // !debug
         // throw ParamTypeMismatch(arg, paramTy)
       }
     map
@@ -415,7 +423,8 @@ class Interpreter(
   private var iter = 0
 
   /** set for collecting mismatches (!debug) */
-  private var mismatches: Set[(String, Int, Value, Ty)] = Set()
+  private var mismatches: Set[(String, Option[Int], Value, Ty, Option[Obj])] =
+    Set()
 
   /** logging */
   private lazy val pw: PrintWriter =
