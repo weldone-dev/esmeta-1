@@ -105,7 +105,7 @@ class Interpreter(
             val retTy = func.retTy.ty
             if (retTy.isDefined && !retTy.contains(value, st))
               val state: Option[Obj] = value match
-                case addr: Addr => Some(st(addr))
+                case addr: Addr => Some(st(addr).copied)
                 case _          => None
               mismatches.add(
                 (func.name, None, value, retTy, state),
@@ -384,7 +384,7 @@ class Interpreter(
       for ((paramTy, arg) <- func.paramTys.map(_.ty).zip(args)) {
         if (paramTy.isDefined && !paramTy.contains(arg, st))
           val state: Option[Obj] = arg match
-            case addr: Addr => Some(st(addr))
+            case addr: Addr => Some(st(addr).copied)
             case _          => None
           mismatches.add(
             (func.name, Some(args.indexOf(arg)), arg, paramTy, state),
