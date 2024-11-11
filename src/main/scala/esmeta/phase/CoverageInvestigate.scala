@@ -57,10 +57,13 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
             )
       catch
         case e: Throwable =>
-          println(s"Error in $name")
-          e.printStackTrace()
+          println(s"Error in $name : ${e.getMessage}")
+          // e.printStackTrace()
           None
     }).flatten.sortBy(_._2)
+
+    val count = res.count(_.covered)
+    println(s"$count out of ${res.length} survived")
 
     res.foreach {
       case CovInvData(name, covered, blockings, coveredNode, coveredBranch) => {

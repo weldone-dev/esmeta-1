@@ -180,10 +180,12 @@ object BaseUtils {
     val eAF = (aT + aF) * (aF + bF) / n.toDouble
     val eBT = (bT + bF) * (aT + bT) / n.toDouble
     val eBF = (bT + bF) * (aF + bF) / n.toDouble
-    (aT - eAT) * (aT - eAT) / eAT +
-    (aF - eAF) * (aF - eAF) / eAF +
-    (bT - eBT) * (bT - eBT) / eBT +
-    (bF - eBF) * (bF - eBF) / eBF
+    if eAT == 0 || eAF == 0 || eBT == 0 || eBF == 0 then 0
+    else
+      (aT - eAT) * (aT - eAT) / eAT +
+      (aF - eAF) * (aF - eAF) / eAF +
+      (bT - eBT) * (bT - eBT) / eBT +
+      (bF - eBF) * (bF - eBF) / eBF
   }
 
   /** stringify */

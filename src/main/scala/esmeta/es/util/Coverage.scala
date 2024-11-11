@@ -38,7 +38,7 @@ case class Coverage(
     MinifyChecker(cfg.spec, MinifyChecker.swcMinifyFunction)
 
   val fsTrie =
-    new FSTrieWrapper[String](
+    new FSTrieWrapper(
       config = FSTrieConfig(
         maxSensitivity = kFs,
         promotionCriteria = proCrit,

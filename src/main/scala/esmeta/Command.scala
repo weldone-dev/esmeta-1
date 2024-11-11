@@ -250,6 +250,15 @@ case object CmdMinifyCheck
   )
 }
 
+/** `fstrie-stats` command */
+case object CmdFSTrieStats
+  extends Command("fstrie-stats", CmdBase >> FSTrieStats) {
+  val help = "show or dump statistics of the FSTrie as JSON format"
+  val examples = List(
+    "esmeta fstrie-stats log-dir -fstrie-stats:out=out.json",
+  )
+}
+
 // -----------------------------------------------------------------------------
 // ECMAScript Static Analysis (Meta-Level Static Analysis)
 // -----------------------------------------------------------------------------

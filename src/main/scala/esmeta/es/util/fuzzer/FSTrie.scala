@@ -4,19 +4,64 @@ import scala.annotation.tailrec
 import scala.collection.mutable.Map as MMap
 import esmeta.util.BaseUtils.chiSquaredTest
 import io.circe.*, io.circe.syntax.*, io.circe.generic.semiauto.*
+import esmeta.util.SystemUtils.*
 
-class FSTrieWrapper[K](
+object FSTrieWrapper:
+  def fromDir(baseDir: String): FSTrieWrapper =
+    given fsTrieConfigDecoder: Decoder[FSTrieConfig] = deriveDecoder
+    val config = readJson[FSTrieConfig](f"$baseDir/fstrie-config.json")
+    val fsTrieWrapper = FSTrieWrapper(config)
+    fsTrieWrapper.replaceRootFromJson(f"$baseDir/fstrie-root.json")
+    fsTrieWrapper
+
+  def debug: Unit =
+    val trie = FSTrieWrapper(
+      FSTrieConfig(promotionCriteria = 1, demotionCriteria = 1),
+    )
+    import trie.given
+    val hitStacks = List(
+      List("a"),
+      List("a"),
+      List("a"),
+      List("a"),
+    )
+    val missStacks = List(
+      List("b"),
+      List("c"),
+      List("d"),
+      List("e"),
+      List("f"),
+      List("g"),
+      List("h"),
+      List("i"),
+      List("j"),
+      List("k"),
+      List("l"),
+      List("m"),
+      List("n"),
+      List("o"),
+      List("p"),
+      List("q"),
+      List("r"),
+      List("s"),
+    )
+    trie.touchWithHit(hitStacks)
+    trie.touchWithMiss(missStacks)
+    println(trie(List("a")))
+    println(trie(List("b")))
+    println(trie.root)
+
+class FSTrieWrapper(
   val config: FSTrieConfig,
+  val debug: Boolean = false,
 ) {
-  val root: FSTrie[K] = FSTrie[K](status = FSTrieStatus.Noticed)
+  var root: FSTrie = FSTrie(status = FSTrieStatus.Noticed)
 
   val scoringFunction: (Int, Int) => Double = (hits, misses) => {
     val absentHits = rootHits - hits
     val absentMisses = rootMisses - misses
     chiSquaredTest(hits, misses, absentHits, absentMisses)
   }
-  // val scoringFunction: (Int, Int) => Double = (hits, misses) =>
-  //   hits.toDouble / (hits + misses)
 
   private var rootHits: Int = 0
   private var rootMisses: Int = 0
@@ -28,7 +73,7 @@ class FSTrieWrapper[K](
     * @param stacks
     *   the feature stacks generated from the successful script
     */
-  def touchWithHit(stacks: Iterable[List[K]]): Unit =
+  def touchWithHit(stacks: Iterable[List[String]]): Unit =
     rootHits += stacks.size
     stacks.foreach(root.touchByStack(_, isHit = true))
     root.writeback()
@@ -41,18 +86,23 @@ class FSTrieWrapper[K](
     * @param stacks
     *   the feature stacks generated from the failed script
     */
-  def touchWithMiss(stacks: Iterable[List[K]]): Unit =
+  def touchWithMiss(stacks: Iterable[List[String]]): Unit =
     rootMisses += stacks.size
     stacks.foreach(root.touchByStack(_, isHit = false))
     root.writeback()
     root.updateStatus()
 
-  def apply(stack: List[K]): Int = root(stack)
+  def apply(stack: List[String]): Int = root(stack)
 
-  given fSTrieEncoder: Encoder[FSTrie[String]] = deriveEncoder
-  given fsTrieDecoder: Decoder[FSTrie[String]] = deriveDecoder
+  given fSTrieEncoder: Encoder[FSTrie] = deriveEncoder
+  given fsTrieDecoder: Decoder[FSTrie] = deriveDecoder
   given fsTrieConfigEncoder: Encoder[FSTrieConfig] = deriveEncoder
   given fsTrieConfigDecoder: Decoder[FSTrieConfig] = deriveDecoder
+
+  def replaceRootFromJson(filename: String): Unit =
+    root = readJson[FSTrie](filename)
+
+  def stacks: Set[List[String]] = root.stacks
 
   /** A trie that stores the status of each node in the trie, and calculates the
     * score of each node based on the hits and misses of the node and its
@@ -76,8 +126,8 @@ class FSTrieWrapper[K](
     *   based on the hits and misses of this node. This is used to calculate the
     *   standard deviation of the scores
     */
-  case class FSTrie[K](
-    private val children: MMap[K, FSTrie[K]] = MMap.empty[K, FSTrie[K]],
+  case class FSTrie(
+    private val children: MMap[String, FSTrie] = MMap.empty[String, FSTrie],
     private var status: FSTrieStatus,
     private var hits: Int = 0,
     private var misses: Int = 0,
@@ -95,9 +145,9 @@ class FSTrieWrapper[K](
       * @return
       *   the number of features we need to take
       */
-    private[FSTrieWrapper] def apply(stack: List[K]): Int =
+    private[FSTrieWrapper] def apply(stack: List[String]): Int =
       math.min(
-        foldByStack(stack, 0) {
+        foldByStack(stack, -1) {
           case (acc, node) =>
             if node.status == Noticed then acc + 1
             else acc
@@ -107,15 +157,10 @@ class FSTrieWrapper[K](
 
     /** Insert a feature stack into the trie. Increment the hits or misses of
       * each node in the trie based on whether the node is hit or miss.
-      *
-      * @param stack
-      *   the stack of features' names
-      * @param isHit
-      *   whether the node is hit or miss
       */
     @tailrec
     private[FSTrieWrapper] final def touchByStack(
-      stack: List[K],
+      stack: List[String],
       isHit: Boolean,
     ): Unit =
       if isHit then hits += 1 else misses += 1
@@ -126,8 +171,8 @@ class FSTrieWrapper[K](
           children.get(head) match {
             case Some(child) => child.touchByStack(tail, isHit)
             case None =>
-              val child = new FSTrie[K](
-                MMap.empty[K, FSTrie[K]],
+              val child = new FSTrie(
+                MMap.empty[String, FSTrie],
                 status match {
                   case Noticed => Promotable
                   case _       => Ignored
@@ -170,6 +215,8 @@ class FSTrieWrapper[K](
     private[FSTrieWrapper] def updateStatus(): Unit =
       val promotionScore = avgScore + config.promotionCriteria * stdev
       val demotionScore = avgScore - config.demotionCriteria * stdev
+      // println(f"Promotion score: $promotionScore%.2f")
+      // println(f"Demotion score: $demotionScore%.2f")
       // demote to Ignored from the leaf first
       foreachFromLeaf { node =>
         node.status match {
@@ -189,19 +236,18 @@ class FSTrieWrapper[K](
             }
           case Promotable if node.avgScore > promotionScore =>
             node.status = Noticed
-            children.valuesIterator.foreach(_.status = Promotable)
+            node.children.valuesIterator.foreach { c =>
+              c.status = Promotable
+            }
           case _ => node.status
         }
       }
 
     /** Recursively do something to each node in the trie, starting from the
       * root
-      *
-      * @param op
-      *   the operation to be done to each node
       */
     private def foreachFromRoot(
-      op: FSTrie[K] => Unit,
+      op: FSTrie => Unit,
       iterIgnored: Boolean = false,
     ): Unit =
       op(this)
@@ -212,12 +258,9 @@ class FSTrieWrapper[K](
 
     /** Recursively do something to each node in the trie, starting from the
       * leaf
-      *
-      * @param op
-      *   the operation to be done to each node
       */
     private def foreachFromLeaf(
-      op: FSTrie[K] => Unit,
+      op: FSTrie => Unit,
       iterIgnored: Boolean = false,
     ): Unit =
       children.valuesIterator.foreach { child =>
@@ -227,7 +270,9 @@ class FSTrieWrapper[K](
       op(this)
 
     @tailrec
-    private final def iterByStack(stack: List[K])(op: FSTrie[K] => Unit): Unit =
+    private final def iterByStack(stack: List[String])(
+      op: FSTrie => Unit,
+    ): Unit =
       op(this)
       stack match {
         case Nil =>
@@ -239,8 +284,8 @@ class FSTrieWrapper[K](
       }
 
     @tailrec
-    private final def foldByStack[A](stack: List[K], z: A)(
-      op: (A, FSTrie[K]) => A,
+    private final def foldByStack[A](stack: List[String], z: A)(
+      op: (A, FSTrie) => A,
     ): A =
       stack match {
         case Nil => op(z, this)
@@ -251,30 +296,32 @@ class FSTrieWrapper[K](
           }
       }
 
-    private def get(stack: List[K]): Option[FSTrie[K]] =
-      foldByStack(stack, Option.empty[FSTrie[K]])((_, node) => Some(node))
+    private def get(stack: List[String]): Option[FSTrie] =
+      foldByStack(stack, Option.empty[FSTrie])((_, node) => Some(node))
 
     private def touches: Int = hits + misses
 
     private def stdev: Double = Math.sqrt(avgScoreSq - avgScore * avgScore)
+
+    def stacks = stacksSuppl(Nil, Set.empty)
+
+    private def stacksSuppl(
+      currStack: List[String],
+      acc: Set[List[String]],
+    ): Set[List[String]] =
+      if children.isEmpty then acc + currStack
+      else if (status == Promotable) || (status == Ignored) then acc
+      else
+        children.flatMap {
+          case (k, v) =>
+            v.stacksSuppl(currStack :+ k, acc)
+        }.toSet + currStack
   }
 }
 
-/** Configuration for the FSTrie
-  *
-  * @param scoringFunction
-  *   A function that calculates the score of based on hits and misses, used to
-  *   determine the promotion or demotion of a node
-  * @param promotionCriteria
-  *   The number of standard deviations above the mean score calculated by the
-  *   scoring function, at which a node is promoted from Promotable to Noticed
-  * @param demotionCriteria
-  *   The number of standard deviations below the mean score calculated by the
-  *   scoring function, at which a node is demoted from Demotable to Ignored
-  */
 case class FSTrieConfig(
-  promotionCriteria: Int = 3,
-  demotionCriteria: Int = 3,
+  promotionCriteria: Int = 3, // 3 sigma for promotion by default
+  demotionCriteria: Int = 3, // 3 sigma for demotion by default
   maxSensitivity: Int = 3,
 )
 
