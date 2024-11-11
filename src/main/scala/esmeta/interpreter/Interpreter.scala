@@ -37,10 +37,13 @@ class Interpreter(
       if (tyCheck) // !debug
         println("[Interpreter] Runtime type checking started")
         println()
-        for ((fName, idx, value, ty, state) <- mismatches) {
-          if idx.isDefined then
-            println(s"[ParamTypeMismatch] args[${idx.get}] in `${fName}`")
-          else println(s"[ReturnTypeMismatch] ret in `${fName}`")
+        for ((callerName, calleeName, idx, value, ty, state) <- mismatches) {
+          val isParamTyMismatch = idx.isDefined && callerName.isDefined
+          if isParamTyMismatch then
+            println(
+              s"[ParamTypeMismatch] args[${idx.get}] in `${calleeName}`, called by `${callerName.get}`",
+            )
+          else println(s"[ReturnTypeMismatch] ret in `${calleeName}`")
           println(s"- Expected type: `${ty}`")
           println(s"- Actual value: `${value}`")
           println()
@@ -108,8 +111,9 @@ class Interpreter(
                 case addr: Addr => Some(st(addr).copied)
                 case _          => None
               mismatches.add(
-                (func.name, None, value, retTy, state),
+                (None, func.name, None, value, retTy, state),
               ) // !debug
+            funcNames = funcNames.tail
           // throw ReturnTypeMismatch(value, retTy)
           true
 
@@ -381,13 +385,21 @@ class Interpreter(
     }
     aux(params, args)
     if (tyCheck)
+      funcNames = func.name :: funcNames
       for ((paramTy, arg) <- func.paramTys.map(_.ty).zip(args)) {
         if (paramTy.isDefined && !paramTy.contains(arg, st))
           val state: Option[Obj] = arg match
             case addr: Addr => Some(st(addr).copied)
             case _          => None
           mismatches.add(
-            (func.name, Some(args.indexOf(arg)), arg, paramTy, state),
+            (
+              funcNames.lift(1),
+              func.name,
+              Some(args.indexOf(arg)),
+              arg,
+              paramTy,
+              state,
+            ),
           ) // !debug
         // throw ParamTypeMismatch(arg, paramTy)
       }
@@ -422,8 +434,12 @@ class Interpreter(
   /** itereration count */
   private var iter = 0
 
+  /** list for recording function calls (!debug) */
+  private var funcNames: List[String] = Nil
+
   /** set for collecting mismatches (!debug) */
-  private var mismatches: Set[(String, Option[Int], Value, Ty, Option[Obj])] =
+  private var mismatches
+    : Set[(Option[String], String, Option[Int], Value, Ty, Option[Obj])] =
     Set()
 
   /** logging */
