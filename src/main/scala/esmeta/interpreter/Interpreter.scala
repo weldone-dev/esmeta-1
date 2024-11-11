@@ -85,14 +85,14 @@ class Interpreter(
                           .from(modeledFields.find(_.name == f).get.typeStr)
                         v match
                           case x: Value if !expected.contains(x, st.heap) =>
-                              println(s"  - Diff in `${f}`")
-                              println(s"    - Expected type: `${expected}`")
-                              println(s"    - Actual value : `${actualTy(x)}`")
+                            println(s"  - Diff in `${f}`")
+                            println(s"    - Expected type: `${expected}`")
+                            println(s"    - Actual value : `${actualTy(x)}`")
                           case Uninit =>
-                              println(s"  - Diff in `${f}`")
-                              println(s"    - Expected type: `${expected}`")
-                              println(s"    - Actual value : `${Uninit}`")
-                          case _ =>
+                            println(s"  - Diff in `${f}`")
+                            println(s"    - Expected type: `${expected}`")
+                            println(s"    - Actual value : `${Uninit}`")
+                          case _ => ,
                       )
                   case _ =>
               case _ =>
