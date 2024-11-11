@@ -18,6 +18,7 @@ import java.math.MathContext.DECIMAL128
 import scala.annotation.tailrec
 import scala.collection.mutable.{Map => MMap, Set}
 import scala.math.{BigInt => SBigInt}
+import esmeta.state.BigInt
 
 /** extensible helper of IR interpreter with a CFG */
 class Interpreter(
@@ -44,12 +45,57 @@ class Interpreter(
               s"[ParamTypeMismatch] args[${idx.get}] in `${calleeName}`, called by `${callerName.get}`",
             )
           else println(s"[ReturnTypeMismatch] ret in `${calleeName}`")
-          println(s"- Expected type: `${ty}`")
-          println(s"- Actual value: `${value}`")
-          println()
+          println(s"- Expected: `${ty}`")
+          val actualTy: Value => ValueTy = _ match
+            case addr: Addr =>
+              st(addr) match
+                case obj: RecordObj => RecordT(obj.tname)
+                case _: MapObj      => MapT
+                case _: ListObj     => ListT
+                case obj: YetObj    => throw NotSupported(Feature)(obj.msg)
+            case Clo(_, _)           => CloT
+            case Cont(_, _, _)       => ContT
+            case _: AstValue         => AstT
+            case GrammarSymbol(_, _) => GrammarSymbolT
+            case _: Math             => MathT
+            case Infinity(_)         => InfinityT
+            case Enum(_)             => EnumT
+            case CodeUnit(_)         => CodeUnitT
+            case _: Number           => NumberT
+            case BigInt(_)           => BigIntT
+            case Str(_)              => StrT
+            case Bool(_)             => BoolT
+            case Undef               => UndefT
+            case Null                => NullT
+          println(s"- Actual  : `${actualTy(value)}`")
           if (state.isDefined)
-            println(s"Debug: `${value}`")
-            println(s"${state.get}")
+            RecordTy.from(ty.toString) match
+              case RecordTy.Elem(map) =>
+                val modeledFields = tyModel
+                  .declMap(map.keys.head)
+                  .elems
+                  .map(_.asInstanceOf[TyDecl.Elem.Field])
+                state.get match
+                  case RecordObj(tname, map) =>
+                    map.view
+                      .filterKeys(modeledFields.map(_.name).contains(_))
+                      .toMap
+                      .foreach((f, v) =>
+                        val expected = ValueTy
+                          .from(modeledFields.find(_.name == f).get.typeStr)
+                        v match
+                          case x: Value if !expected.contains(x, st.heap) =>
+                              println(s"  - Diff in `${f}`")
+                              println(s"    - Expected type: `${expected}`")
+                              println(s"    - Actual value : `${actualTy(x)}`")
+                          case Uninit =>
+                              println(s"  - Diff in `${f}`")
+                              println(s"    - Expected type: `${expected}`")
+                              println(s"    - Actual value : `${Uninit}`")
+                          case _ =>
+                      )
+                  case _ =>
+              case _ =>
           println()
         }
         println("[Interpreter] Runtime type checking finished")
