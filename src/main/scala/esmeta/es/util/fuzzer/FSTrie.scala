@@ -90,7 +90,9 @@ class FSTrieWrapper(
     */
   def touchWithMiss(stacks: Iterable[List[String]]): Unit =
     rootMisses += stacks.size
-    stacks.foreach(root.touchByStack(_, isHit = false))
+    stacks.foreach { s =>
+      root.touchByStack(s.take(config.maxSensitivity), isHit = false)
+    }
     root.writeback()
     root.updateStatus()
 
