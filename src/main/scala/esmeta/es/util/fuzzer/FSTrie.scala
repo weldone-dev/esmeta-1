@@ -75,7 +75,9 @@ class FSTrieWrapper(
     */
   def touchWithHit(stacks: Iterable[List[String]]): Unit =
     rootHits += stacks.size
-    stacks.foreach(root.touchByStack(_, isHit = true))
+    stacks.foreach { s =>
+      root.touchByStack(s.take(config.maxSensitivity), isHit = true)
+    }
     root.writeback()
     root.updateStatus()
 
@@ -121,10 +123,6 @@ class FSTrieWrapper(
     *   Promotable, the score is calculated based on the hits and misses of this
     *   node.
     * @param avgScoreSq
-    *   average of the square of the scores of its descendants which are
-    *   Promotable If this node is Promotable, the scoreSquared is calculated
-    *   based on the hits and misses of this node. This is used to calculate the
-    *   standard deviation of the scores
     */
   case class FSTrie(
     private val children: MMap[String, FSTrie] = MMap.empty[String, FSTrie],
