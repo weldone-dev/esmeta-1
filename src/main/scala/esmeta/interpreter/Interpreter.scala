@@ -35,7 +35,7 @@ class Interpreter(
   lazy val result: State = timeout(
     {
       while (step) {}
-      if (tyCheck) // !debug
+      if (tyCheck) // !debug: should refactor
         println("[Interpreter] Runtime type checking started")
         println()
         for ((callerName, calleeName, idx, value, ty, state) <- mismatches) {
@@ -71,29 +71,41 @@ class Interpreter(
           if (state.isDefined)
             RecordTy.from(ty.toString) match
               case RecordTy.Elem(map) =>
+                // !debug: So far, only fields are considered (TODO: con/abs methods)
                 val modeledFields = tyModel
                   .declMap(map.keys.head)
                   .elems
+                  .filter(_.isInstanceOf[TyDecl.Elem.Field])
                   .map(_.asInstanceOf[TyDecl.Elem.Field])
                 state.get match
                   case RecordObj(tname, map) =>
-                    map.view
+                    val tyModelLookup: String => ValueTy = name =>
+                      ValueTy.from(
+                        modeledFields.find(_.name == name).get.typeStr,
+                      )
+                    val target = map.view
                       .filterKeys(modeledFields.map(_.name).contains(_))
                       .toMap
-                      .foreach((f, v) =>
-                        val expected = ValueTy
-                          .from(modeledFields.find(_.name == f).get.typeStr)
+                    if target.isEmpty then
+                      println("  - No comparable fields found in expected type")
+                      println(s"  - Check ${value} in detail-log for more info")
+                    else
+                      val mismatched = target.filter((f, v) =>
+                        val expected = tyModelLookup(f)
                         v match
-                          case x: Value if !expected.contains(x, st.heap) =>
-                            println(s"  - Diff in `${f}`")
-                            println(s"    - Expected type: `${expected}`")
-                            println(s"    - Actual value : `${actualTy(x)}`")
-                          case Uninit =>
-                            println(s"  - Diff in `${f}`")
-                            println(s"    - Expected type: `${expected}`")
-                            println(s"    - Actual value : `${Uninit}`")
-                          case _ => ,
+                          case value: Value =>
+                            !expected.contains(value, st.heap)
+                          case Uninit => true,
                       )
+                      for ((f, v) <- mismatched) {
+                        val expected = tyModelLookup(f)
+                        val actual = v match
+                          case value: Value => actualTy(value)
+                          case Uninit       => Uninit
+                        println(s"  - Diff in `${f}`")
+                        println(s"    - Expected type: `${expected}`")
+                        println(s"    - Actual value : `${actual}`")
+                      }
                   case _ =>
               case _ =>
           println()
