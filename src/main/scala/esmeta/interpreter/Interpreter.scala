@@ -83,26 +83,29 @@ class Interpreter(
                       ValueTy.from(
                         modeledFields.find(_.name == name).get.typeStr,
                       )
-                    val target = map.view
+                    val comparable = map.view
                       .filterKeys(modeledFields.map(_.name).contains(_))
                       .toMap
-                    if target.isEmpty then
+                    if comparable.isEmpty then
                       println("  - No comparable fields found in expected type")
                       println(s"  - Check ${value} in detail-log for more info")
                     else
-                      val mismatched = target.filter((f, v) =>
+                      val mismatched = comparable.filter((f, v) =>
                         val expected = tyModelLookup(f)
                         v match
                           case value: Value =>
                             !expected.contains(value, st.heap)
                           case Uninit => true,
                       )
+                      if (mismatched.isEmpty) // !debug: Related to TODO above
+                        println("  - Currently, only fields are considered")
+                        println("  - Other diff-levels will be supported soon")
                       for ((f, v) <- mismatched) {
                         val expected = tyModelLookup(f)
                         val actual = v match
                           case value: Value => actualTy(value)
                           case Uninit       => Uninit
-                        println(s"  - Diff in `${f}`")
+                        println(s"  - Diff in field  : `${f}`")
                         println(s"    - Expected type: `${expected}`")
                         println(s"    - Actual value : `${actual}`")
                       }
