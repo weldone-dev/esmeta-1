@@ -205,12 +205,19 @@ class FSTrieWrapper(
             node.promotables = node.children.valuesIterator
               .map(child => child.promotables)
               .sum
-            node.avgScore = node.children.valuesIterator
-              .map(child => child.avgScore * child.promotables)
-              .sum / node.promotables
-            node.avgScoreSq = node.children.valuesIterator
-              .map(child => child.avgScoreSq * child.promotables)
-              .sum / node.promotables
+            node.avgScore =
+              if node.promotables == 0 then
+                scoringFunction(node.hits, node.misses)
+              else
+                node.children.valuesIterator
+                  .map(child => child.avgScore * child.promotables)
+                  .sum / node.promotables
+            node.avgScoreSq =
+              if node.promotables == 0 then node.avgScore * node.avgScore
+              else
+                node.children.valuesIterator
+                  .map(child => child.avgScoreSq * child.promotables)
+                  .sum / node.promotables
           case Ignored => ()
         }
     }
@@ -219,6 +226,7 @@ class FSTrieWrapper(
       * Assume that the children have already been written back.
       */
     private[FSTrieWrapper] def updateStatus(): Unit =
+      if !avgScore.isFinite then println("Score is not finite")
       val promotionScore = avgScore + config.promotionCriteria * stdev
       val demotionScore = avgScore - config.demotionCriteria * stdev
       // println(f"Promotion score: $promotionScore%.2f")
