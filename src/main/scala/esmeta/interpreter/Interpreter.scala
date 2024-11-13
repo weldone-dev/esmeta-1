@@ -1,24 +1,22 @@
 package esmeta.interpreter
 
-import esmeta.{EVAL_LOG_DIR, LINE_SEP}
 import esmeta.cfg.*
 import esmeta.error.*
+import esmeta.error.NotSupported.Category.{Type as _, *}
 import esmeta.error.NotSupported.{*, given}
-import esmeta.error.NotSupported.Category.{Type => _, *}
-import esmeta.ir.{Func => IRFunc, *}
 import esmeta.es.*
+import esmeta.ir.{Func as IRFunc, *}
 import esmeta.parser.{ESParser, ESValueParser}
 import esmeta.state.*
 import esmeta.ty.*
-import esmeta.util.BaseUtils.{error => _, *}
+import esmeta.util.BaseUtils.{optional, error as _, *}
 import esmeta.util.SystemUtils.*
-import esmeta.TEST_MODE
+import esmeta.{EVAL_LOG_DIR, LINE_SEP, TEST_MODE}
+
 import java.io.PrintWriter
 import java.math.MathContext.DECIMAL128
 import scala.annotation.tailrec
-import scala.collection.mutable.{Map => MMap, Set}
-import scala.math.{BigInt => SBigInt}
-import esmeta.state.BigInt
+import scala.collection.mutable.{Set, Map as MMap}
 
 /** extensible helper of IR interpreter with a CFG */
 class Interpreter(
@@ -29,92 +27,170 @@ class Interpreter(
   val timeLimit: Option[Int] = None,
   val tyCheck: Boolean = false,
 ) {
+
   import Interpreter.*
+
+  // ===========================================================================
+
+  import Mismatch.*
+
+  sealed trait Mismatch
+
+  object Mismatch {
+    case object ParamTypeMismatch extends Mismatch
+
+    case object ReturnTypeMismatch extends Mismatch
+  }
+
+  private lazy val pwTy: PrintWriter =
+    logPW.getOrElse(getPrintWriter(s"$EVAL_LOG_DIR/ty-check-log"))
+
+  private val actualTy: Value => ValueTy =
+    case addr: Addr =>
+      st(addr) match
+        case obj: RecordObj => RecordT(obj.tname)
+        case _: MapObj      => MapT
+        case _: ListObj     => ListT
+        case obj: YetObj    => throw NotSupported(Feature)(obj.msg)
+    case Clo(_, _)           => CloT
+    case Cont(_, _, _)       => ContT
+    case _: AstValue         => AstT
+    case GrammarSymbol(_, _) => GrammarSymbolT
+    case _: Math             => MathT
+    case Infinity(_)         => InfinityT
+    case Enum(_)             => EnumT
+    case CodeUnit(_)         => CodeUnitT
+    case _: Number           => NumberT
+    case BigInt(_)           => BigIntT
+    case Str(_)              => StrT
+    case Bool(_)             => BoolT
+    case Undef               => UndefT
+    case Null                => NullT
+
+  private def generateTyCheckLog(): String = {
+    val sb: StringBuilder = new StringBuilder()
+
+    def log(s: String = "") = sb.append(s).append("\n")
+
+    log("[Interpreter] Runtime type checking started\n")
+
+    mismatches.foreach {
+      case (
+            callStack,
+            mismatchFuncName,
+            idx,
+            actualVal,
+            expectedTy,
+            state,
+            mismatchType,
+          ) =>
+        log(
+          "\n----------------------------------------------------------------------------------------------------\n",
+        )
+
+        mismatchType match {
+          case ParamTypeMismatch =>
+            log(s"[ParamTypeMismatch] args[${idx.get}] in `$mismatchFuncName`")
+          case ReturnTypeMismatch =>
+            log(s"[ReturnTypeMismatch] ret in `$mismatchFuncName`")
+        }
+
+        log(s"- Expected Type: `$expectedTy`")
+        log(s"- Actual Value(Type): `${actualVal}(${actualTy(actualVal)})`")
+
+        state.foreach { s =>
+          RecordTy.from(expectedTy.toString) match {
+            case RecordTy.Elem(map) =>
+              // !debug: So far, only fields are considered (TODO: con/abs methods)
+              val modeledFields = tyModel
+                .declMap(map.keys.head)
+                .elems
+                .collect { case field: TyDecl.Elem.Field => field }
+
+              s match {
+                case RecordObj(_, recordMap) =>
+                  val tyModelLookup: String => ValueTy = name =>
+                    ValueTy.from(modeledFields.find(_.name == name).get.typeStr)
+
+                  val comparableFields = recordMap.view
+                    .filterKeys(modeledFields.map(_.name).contains)
+                    .toMap
+
+                  if comparableFields.isEmpty then
+                    log("  - No comparable fields found in expected type")
+                    log(
+                      s"  - Check ${actualVal} via `-eval:detail-log` for more info",
+                    )
+                  else
+                    val mismatchedFields = comparableFields.filter {
+                      case (field, v) =>
+                        val expected = tyModelLookup(field)
+                        v match {
+                          case value: Value =>
+                            !expected.contains(value, st.heap)
+                          case Uninit => true
+                        }
+                    }
+
+                    if (mismatchedFields.isEmpty) // !debug
+                      log("  - Currently, only fields are considered")
+                      log("  - Other diff-levels will be supported soon")
+
+                    mismatchedFields.foreach {
+                      case (field, v) =>
+                        val expected = tyModelLookup(field)
+                        val actual = v match
+                          case value: Value => actualTy(value)
+                          case Uninit       => Uninit
+                        log(s"  - Diff in field  : `${field}`")
+                        log(s"    - Expected type: `${expected}`")
+                        log(s"    - Actual value : `${actual}`")
+                    }
+
+                    log()
+                    actualVal match // !debug
+                      case addr: Addr =>
+                        log(s"- Debug   : ${addr}")
+                        log(s"${st(addr)}")
+                      case Clo(func, captured) =>
+                        log(s"- Debug   : func: ${func}, captured: ${captured}")
+                      case Cont(func, captured, callStack) =>
+                        log(
+                          s"- Debug   : func: ${func}, captured: ${captured}, callStack: ${callStack}",
+                        )
+                      case _ => log(s"- Debug   : ${actualVal}")
+
+                case _ =>
+              }
+            case _ =>
+          }
+        }
+
+        log(s"\n[Call Stack]")
+        callStack.zipWithIndex.foreach {
+          case (st, index) =>
+            if (index < 5)
+              log(s"\t[$index] $st")
+        }
+        log("\t...\n")
+    }
+    log("[Interpreter] Runtime type checking finished")
+    log(s"[Interpreter] ${mismatches.size} mismatch(es) detected")
+
+    sb.toString
+  }
+
+  // ===========================================================================
 
   /** final state */
   lazy val result: State = timeout(
     {
       while (step) {}
-      if (tyCheck) // !debug: should refactor
-        println("[Interpreter] Runtime type checking started")
-        println()
-        for ((callerName, calleeName, idx, value, ty, state) <- mismatches) {
-          val isParamTyMismatch = idx.isDefined && callerName.isDefined
-          if isParamTyMismatch then
-            println(
-              s"[ParamTypeMismatch] args[${idx.get}] in `${calleeName}`, called by `${callerName.get}`",
-            )
-          else println(s"[ReturnTypeMismatch] ret in `${calleeName}`")
-          println(s"- Expected: `${ty}`")
-          val actualTy: Value => ValueTy = _ match
-            case addr: Addr =>
-              st(addr) match
-                case obj: RecordObj => RecordT(obj.tname)
-                case _: MapObj      => MapT
-                case _: ListObj     => ListT
-                case obj: YetObj    => throw NotSupported(Feature)(obj.msg)
-            case Clo(_, _)           => CloT
-            case Cont(_, _, _)       => ContT
-            case _: AstValue         => AstT
-            case GrammarSymbol(_, _) => GrammarSymbolT
-            case _: Math             => MathT
-            case Infinity(_)         => InfinityT
-            case Enum(_)             => EnumT
-            case CodeUnit(_)         => CodeUnitT
-            case _: Number           => NumberT
-            case BigInt(_)           => BigIntT
-            case Str(_)              => StrT
-            case Bool(_)             => BoolT
-            case Undef               => UndefT
-            case Null                => NullT
-          println(s"- Actual  : `${actualTy(value)}`")
-          if (state.isDefined)
-            RecordTy.from(ty.toString) match
-              case RecordTy.Elem(map) =>
-                // !debug: So far, only fields are considered (TODO: con/abs methods)
-                val modeledFields = tyModel
-                  .declMap(map.keys.head)
-                  .elems
-                  .filter(_.isInstanceOf[TyDecl.Elem.Field])
-                  .map(_.asInstanceOf[TyDecl.Elem.Field])
-                state.get match
-                  case RecordObj(tname, map) =>
-                    val tyModelLookup: String => ValueTy = name =>
-                      ValueTy.from(
-                        modeledFields.find(_.name == name).get.typeStr,
-                      )
-                    val comparable = map.view
-                      .filterKeys(modeledFields.map(_.name).contains(_))
-                      .toMap
-                    if comparable.isEmpty then
-                      println("  - No comparable fields found in expected type")
-                      println(s"  - Check ${value} in detail-log for more info")
-                    else
-                      val mismatched = comparable.filter((f, v) =>
-                        val expected = tyModelLookup(f)
-                        v match
-                          case value: Value =>
-                            !expected.contains(value, st.heap)
-                          case Uninit => true,
-                      )
-                      if (mismatched.isEmpty) // !debug: Related to TODO above
-                        println("  - Currently, only fields are considered")
-                        println("  - Other diff-levels will be supported soon")
-                      for ((f, v) <- mismatched) {
-                        val expected = tyModelLookup(f)
-                        val actual = v match
-                          case value: Value => actualTy(value)
-                          case Uninit       => Uninit
-                        println(s"  - Diff in field  : `${f}`")
-                        println(s"    - Expected type: `${expected}`")
-                        println(s"    - Actual value : `${actual}`")
-                      }
-                  case _ =>
-              case _ =>
-          println()
-        }
-        println("[Interpreter] Runtime type checking finished")
-        println(s"[Interpreter] ${mismatches.size} mismatch(es) detected")
+      if (tyCheck)
+        val log = generateTyCheckLog()
+        pwTy.println(log)
+        pwTy.close
+        println(s"[Interpreter] ty-check Logging finished")
       if (log)
         pw.println(st)
         pw.close
@@ -172,7 +248,7 @@ class Interpreter(
                 case addr: Addr => Some(st(addr).copied)
                 case _          => None
               mismatches.add(
-                (None, func.name, None, value, retTy, state),
+                (Nil, func.name, None, value, retTy, state, ReturnTypeMismatch),
               ) // !debug
             funcNames = funcNames.tail
           // throw ReturnTypeMismatch(value, retTy)
@@ -429,6 +505,7 @@ class Interpreter(
   ): MMap[Local, Value] = {
     val func = callee.func
     val map = MMap[Local, Value]()
+
     @tailrec
     def aux(ps: List[Param], as: List[Value]): Unit = (ps, as) match {
       case (Nil, Nil) =>
@@ -444,22 +521,28 @@ class Interpreter(
         map += param.lhs -> arg
         aux(pl, al)
     }
+
     aux(params, args)
     if (tyCheck)
       funcNames = func.name :: funcNames
       for ((paramTy, arg) <- func.paramTys.map(_.ty).zip(args)) {
-        if (paramTy.isDefined && !paramTy.contains(arg, st))
+        val idx = args.indexOf(arg)
+        val thisMethodCall = func.isMethod && idx == 0
+
+        if (paramTy.isDefined && !paramTy.contains(arg, st) && !thisMethodCall)
+          val callStack: List[String] = st.callStack.map(ctxt => ctxt.name)
           val state: Option[Obj] = arg match
             case addr: Addr => Some(st(addr).copied)
             case _          => None
           mismatches.add(
             (
-              funcNames.lift(1),
+              func.name :: st.context.name :: callStack,
               func.name,
-              Some(args.indexOf(arg)),
+              Some(idx),
               arg,
               paramTy,
               state,
+              ParamTypeMismatch,
             ),
           ) // !debug
         // throw ParamTypeMismatch(arg, paramTy)
@@ -483,6 +566,7 @@ class Interpreter(
   // ---------------------------------------------------------------------------
   // private helpers
   // ---------------------------------------------------------------------------
+
   /** control flow graphs */
   private given cfg: CFG = st.cfg
 
@@ -499,8 +583,9 @@ class Interpreter(
   private var funcNames: List[String] = Nil
 
   /** set for collecting mismatches (!debug) */
-  private var mismatches
-    : Set[(Option[String], String, Option[Int], Value, Ty, Option[Obj])] =
+  private var mismatches: Set[
+    (List[String], String, Option[Int], Value, Ty, Option[Obj], Mismatch),
+  ] =
     Set()
 
   /** logging */
@@ -705,6 +790,7 @@ object Interpreter {
           case Str(s)      => s
           case CodeUnit(c) => c.toString
           case v           => throw NoString(v)
+
         vopEval(toString, _ + _, Str(_), vs)
 
   /** transition for mathematical operators */
