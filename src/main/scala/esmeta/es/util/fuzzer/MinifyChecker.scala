@@ -94,20 +94,18 @@ class MinifyChecker(
             v(offset + k - 1) + 1
         var j = i - k
         while (
-            i < n
-            && j < m
-            && flattenedAst1(i).name == flattenedAst2(j).name
-          )
-        do
+          i < n
+          && j < m
+          && flattenedAst1(i).name == flattenedAst2(j).name
+        ) do
           i += 1
           j += 1
         v(offset + k) = i
         if (i >= n && j >= m) then return result
         if (
-            i < n && j < m
-            && flattenedAst1(i).name != flattenedAst2(j).name
-          )
-        then result = flattenedAst1(j) :: result
+          i < n && j < m
+          && flattenedAst1(i).name != flattenedAst2(j).name
+        ) then result = flattenedAst1(j) :: result
       d += 1
 
     println(s"different ast parts: ${result.map(_.name)}")
