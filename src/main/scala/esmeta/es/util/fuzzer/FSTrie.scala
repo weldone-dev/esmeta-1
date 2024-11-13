@@ -60,7 +60,13 @@ class FSTrieWrapper(
   val scoringFunction: (Int, Int) => Double = (hits, misses) => {
     val absentHits = rootHits - hits
     val absentMisses = rootMisses - misses
-    chiSquaredTest(hits, misses, absentHits, absentMisses)
+    val score = chiSquaredTest(hits, misses, absentHits, absentMisses)
+    if score.isFinite then score
+    else
+      println(
+        f"Score for rootHits: $rootHits, rootMisses: $rootMisses, hits: $hits, misses: $misses is not finite: $score",
+      )
+      0
   }
 
   private var rootHits: Int = 0
