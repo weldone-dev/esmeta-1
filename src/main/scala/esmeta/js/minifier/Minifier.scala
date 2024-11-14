@@ -60,6 +60,6 @@ object Minifier {
           false
       }
     } catch {
-      case err => println(s"[minify-check] $code $err"); false
+      case err => println(s"[minify-check] $code ${err.getMessage()}"); false
     }
 }

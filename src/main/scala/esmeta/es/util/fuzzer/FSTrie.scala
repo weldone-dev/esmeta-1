@@ -61,12 +61,15 @@ class FSTrieWrapper(
     val absentHits = rootHits - hits
     val absentMisses = rootMisses - misses
     val score = chiSquaredTest(hits, misses, absentHits, absentMisses)
-    if score.isFinite then score
-    else
-      println(
-        f"Score for rootHits: $rootHits, rootMisses: $rootMisses, hits: $hits, misses: $misses is not finite: $score",
-      )
-      0
+    assert(
+      score >= 0,
+      f"Score for rootHits: $rootHits, rootMisses: $rootMisses, hits: $hits, misses: $misses is negative: $score",
+    )
+    assert(
+      score.isFinite,
+      f"Score for rootHits: $rootHits, rootMisses: $rootMisses, hits: $hits, misses: $misses is not finite: $score",
+    )
+    score
   }
 
   private var rootHits: Int = 0
@@ -84,6 +87,10 @@ class FSTrieWrapper(
     stacks.foreach { s =>
       root.touchByStack(s.take(config.maxSensitivity), isHit = true)
     }
+    assert(
+      root.hits == rootHits && root.misses == rootMisses,
+      f"Root hits: $rootHits, root misses: $rootMisses, hits: ${root.hits}, misses: ${root.misses}",
+    )
     root.writeback()
     root.updateStatus()
 
@@ -99,6 +106,10 @@ class FSTrieWrapper(
     stacks.foreach { s =>
       root.touchByStack(s.take(config.maxSensitivity), isHit = false)
     }
+    assert(
+      root.hits == rootHits && root.misses == rootMisses,
+      f"Root hits: $rootHits, root misses: $rootMisses, hits: ${root.hits}, misses: ${root.misses}",
+    )
     root.writeback()
     root.updateStatus()
 
@@ -135,8 +146,8 @@ class FSTrieWrapper(
   case class FSTrie(
     private val children: MMap[String, FSTrie] = MMap.empty[String, FSTrie],
     private var status: FSTrieStatus,
-    private var hits: Int = 0,
-    private var misses: Int = 0,
+    var hits: Int = 0,
+    var misses: Int = 0,
     private var dirty: Boolean = false,
     private var promotables: Int = 0,
     private var avgScore: Double = 0,
@@ -220,6 +231,10 @@ class FSTrieWrapper(
                   .sum / node.promotables
           case Ignored => ()
         }
+        assert(
+          node.avgScore >= 0,
+          f"Score is negative: ${node.avgScore}, node: $node",
+        )
     }
 
     /** Promote or demote each node in the trie based on the score of this node.
@@ -236,6 +251,7 @@ class FSTrieWrapper(
         node.status match {
           case Noticed if node.avgScore < demotionScore =>
             node.status = Ignored
+            node.promotables = 0
           case _ => node.status
         }
       }
