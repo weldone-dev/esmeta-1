@@ -56,7 +56,7 @@ object Minifier {
           if diffResult == "true" then true
           else false
         case Failure(exception) =>
-          println(s"[minify-check] $code $exception")
+          // println(s"[minify-check] $code $exception")
           false
       }
     } catch {
