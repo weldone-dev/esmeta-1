@@ -12,7 +12,8 @@ object MinifyChecker {
   val swcMinifyFunction: String => Option[String] = code =>
     Minifier.minifySwc(code) match
       case Failure(exception) =>
-        println(s"[minify-check] $code $exception"); None
+        // println(s"[minify-check] $code $exception")
+        None
       case Success(minified) => Some(minified)
 }
 
