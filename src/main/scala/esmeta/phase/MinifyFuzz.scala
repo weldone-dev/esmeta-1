@@ -45,6 +45,7 @@ case object MinifyFuzz extends Phase[CFG, Coverage] {
       init = config.init,
       proCrit = config.proCrit,
       demCrit = config.demCrit,
+      fsMinTouch = config.fsMinTouch,
     )
 
     for (dirname <- config.out) cov.dumpToWithDetail(dirname)
@@ -121,6 +122,11 @@ case object MinifyFuzz extends Phase[CFG, Coverage] {
       NumOption((c, k) => c.demCrit = k),
       "set the demotion criterion (default: 2).",
     ),
+    (
+      "fs-min-touch",
+      NumOption((c, k) => c.fsMinTouch = k),
+      "set the minimum touch for feature sensitivity (default: 10).",
+    ),
   )
   case class Config(
     var log: Boolean = false,
@@ -136,5 +142,6 @@ case object MinifyFuzz extends Phase[CFG, Coverage] {
     var cp: Boolean = false,
     var proCrit: Int = 2,
     var demCrit: Int = 2,
+    var fsMinTouch: Int = 10,
   )
 }

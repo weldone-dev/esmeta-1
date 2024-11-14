@@ -34,6 +34,7 @@ class Fuzzer(
   cp: Boolean = false,
   proCrit: Int = 2,
   demCrit: Int = 2,
+  fsMinTouch: Int = 10,
 ) {
   import Fuzzer.*
 
@@ -224,6 +225,7 @@ class Fuzzer(
       Some(logDir),
       proCrit = proCrit,
       demCrit = demCrit,
+      fsMinTouch = fsMinTouch,
     )
 
   /** target selector */

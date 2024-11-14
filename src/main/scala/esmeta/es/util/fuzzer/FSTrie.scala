@@ -69,7 +69,7 @@ class FSTrieWrapper(
       score.isFinite,
       f"Score for rootHits: $rootHits, rootMisses: $rootMisses, hits: $hits, misses: $misses is not finite: $score",
     )
-    score
+    if (hits + misses < config.minTouch) 0 else score
   }
 
   private var rootHits: Int = 0
@@ -353,6 +353,7 @@ case class FSTrieConfig(
   promotionCriteria: Int = 3, // 3 sigma for promotion by default
   demotionCriteria: Int = 3, // 3 sigma for demotion by default
   maxSensitivity: Int = 3,
+  minTouch: Int = 10,
 )
 
 /** Status of a node in the trie

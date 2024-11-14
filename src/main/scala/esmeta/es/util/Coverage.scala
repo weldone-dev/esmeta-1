@@ -27,6 +27,7 @@ case class Coverage(
   logDir: Option[String] = None, // TODO: use this
   proCrit: Int = 2,
   demCrit: Int = 2,
+  fsMinTouch: Int = 10,
 ) {
   import Coverage.{*, given}
 
@@ -43,6 +44,7 @@ case class Coverage(
         maxSensitivity = kFs,
         promotionCriteria = proCrit,
         demotionCriteria = demCrit,
+        minTouch = fsMinTouch,
       ),
     )
 
