@@ -64,55 +64,55 @@ class MinifyChecker(
     flattenedAst1: List[Ast],
     flattenedAst2: List[Ast],
     acc: List[Ast],
-  ): List[Ast] =
-    val max = flattenedAst1.length + flattenedAst2.length
-    val v = Array.fill(2 * max + 1)(0)
-    val offset = max
+  ): List[Ast] = Nil // Deprecated
+  // val max = flattenedAst1.length + flattenedAst2.length
+  // val v = Array.fill(2 * max + 1)(0)
+  // val offset = max
 
-    var result = acc
+  // var result = acc
 
-    // println("------flattenedAst1-----")
-    // flattenedAst1.foreach(ast => println(ast.name))
-    // println("------------------------")
+  // // println("------flattenedAst1-----")
+  // // flattenedAst1.foreach(ast => println(ast.name))
+  // // println("------------------------")
 
-    // println("------flattenedAst2-----")
-    // flattenedAst2.foreach(ast => println(ast.name))
-    // println("------------------------")
+  // // println("------flattenedAst2-----")
+  // // flattenedAst2.foreach(ast => println(ast.name))
+  // // println("------------------------")
 
-    // implement diff algorithm here
-    // partially implement just comparing ast names
-    // todo: make metrics for comparing asts
-    val n = flattenedAst1.length
-    val m = flattenedAst2.length
+  // // implement diff algorithm here
+  // // partially implement just comparing ast names
+  // // todo: make metrics for comparing asts
+  // val n = flattenedAst1.length
+  // val m = flattenedAst2.length
 
-    var d = 0
-    while (d <= max) do
-      for (k <- -d to d by 2) do
-        var i =
-          if (k == -d || (k != d && v(offset + k - 1) < v(offset + k + 1)))
-            v(offset + k + 1)
-          else
-            v(offset + k - 1) + 1
-        var j = i - k
-        while (
-            i < n
-            && j < m
-            && flattenedAst1(i).name == flattenedAst2(j).name
-          )
-        do
-          i += 1
-          j += 1
-        v(offset + k) = i
-        if (i >= n && j >= m) then return result
-        if (
-            i < n && j < m
-            && flattenedAst1(i).name != flattenedAst2(j).name
-          )
-        then result = flattenedAst1(j) :: result
-      d += 1
+  // var d = 0
+  // while (d <= max) do
+  //   for (k <- -d to d by 2) do
+  //     var i =
+  //       if (k == -d || (k != d && v(offset + k - 1) < v(offset + k + 1)))
+  //         v(offset + k + 1)
+  //       else
+  //         v(offset + k - 1) + 1
+  //     var j = i - k
+  //     while (
+  //         i < n
+  //         && j < m
+  //         && flattenedAst1(i).name == flattenedAst2(j).name
+  //       )
+  //     do
+  //       i += 1
+  //       j += 1
+  //     v(offset + k) = i
+  //     if (i >= n && j >= m) then return result
+  //     if (
+  //         i < n && j < m
+  //         && flattenedAst1(i).name != flattenedAst2(j).name
+  //       )
+  //     then result = flattenedAst1(j) :: result
+  //   d += 1
 
-    println(s"different ast parts: ${result.map(_.name)}")
-    result
+  // println(s"different ast parts: ${result.map(_.name)}")
+  // result
 
   private def myersDiff(
     flattenedAst1: List[Ast],
