@@ -57,7 +57,7 @@ class FSTrieWrapper(
 ) {
   var root: FSTrie = FSTrie(status = FSTrieStatus.Noticed)
 
-  val scoringFunction: (Int, Int) => Double = (hits, misses) => {
+  val scoringFunction: (Long, Long) => Double = (hits, misses) => {
     val absentHits = rootHits - hits
     val absentMisses = rootMisses - misses
     val score = chiSquaredTest(hits, misses, absentHits, absentMisses)
@@ -72,8 +72,8 @@ class FSTrieWrapper(
     if (hits + misses < config.minTouch) 0 else score
   }
 
-  private var rootHits: Int = 0
-  private var rootMisses: Int = 0
+  private var rootHits: Long = 0
+  private var rootMisses: Long = 0
 
   /** Insert feature stacks from a single script into the trie. The script
     * succeeded to invoke some non-trivial minifier operations. Increment the
@@ -146,8 +146,8 @@ class FSTrieWrapper(
   case class FSTrie(
     private val children: MMap[String, FSTrie] = MMap.empty[String, FSTrie],
     private var status: FSTrieStatus,
-    var hits: Int = 0,
-    var misses: Int = 0,
+    var hits: Long = 0,
+    var misses: Long = 0,
     private var dirty: Boolean = false,
     private var promotables: Int = 0,
     private var avgScore: Double = 0,
@@ -329,7 +329,7 @@ class FSTrieWrapper(
     private def get(stack: List[String]): Option[FSTrie] =
       foldByStack(stack, Option.empty[FSTrie])((_, node) => Some(node))
 
-    private def touches: Int = hits + misses
+    private def touches: Long = hits + misses
 
     private def stdev: Double = Math.sqrt(avgScoreSq - avgScore * avgScore)
 
