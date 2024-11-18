@@ -35,12 +35,17 @@ case class BoolOption[T](assign: (T, Boolean) => Unit) extends OptionKind[T] {
 case class NumOption[T](
   assign: (T, Int) => Unit,
   prefer: Iterable[Int] = Iterable.empty,
+  defaultForEmpty: Option[Int] = None,
 ) extends OptionKind[T] {
   def postfix: String = "={number}"
   def argRegexList(name: String): List[ArgRegex[T]] = List(
     (("-" + name + "=").r, "-?[0-9]+".r, (c, s) => assign(c, s.toInt)),
     (("-" + name + "=").r, ".*".r, (_, _) => throw NoNumArgError(name)),
-    (("-" + name).r, "".r, (_, _) => throw NoNumArgError(name)),
+    (
+      ("-" + name).r,
+      "".r,
+      (c, _) => assign(c, defaultForEmpty.getOrElse(throw NoNumArgError(name))),
+    ),
   )
 
   def completions = prefer.map(_.toString)
@@ -50,12 +55,17 @@ case class NumOption[T](
 case class StrOption[T](
   assign: (T, String) => Unit,
   prefer: Iterable[String] = Iterable.empty,
+  defaultForEmpty: Option[String] = None,
 ) extends OptionKind[T] {
   def postfix: String = "={string}"
   def argRegexList(name: String): List[ArgRegex[T]] = List(
     (("-" + name + "=").r, ".+".r, (c, s) => assign(c, s)),
     (("-" + name + "=").r, ".*".r, (_, _) => throw NoStrArgError(name)),
-    (("-" + name).r, "".r, (_, _) => throw NoStrArgError(name)),
+    (
+      ("-" + name).r,
+      "".r,
+      (c, s) => assign(c, defaultForEmpty.getOrElse(throw NoStrArgError(name))),
+    ),
   )
 
   def completions = prefer
