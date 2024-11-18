@@ -7,7 +7,7 @@ sealed abstract class Test262Error(msg: String)
   extends ESMetaError(msg, s"Test262Error")
 
 /** Test262 failure */
-case class Test262Fail(fails: Summary.Elem)
+case class Test262Fail(fails: Summary.Elem[String, String])
   extends Test262Error(
     s"${fails.size} tests are failed:" + LINE_SEP +
     fails.all.sorted.mkString(LINE_SEP),

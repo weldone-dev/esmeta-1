@@ -1,7 +1,7 @@
 package esmeta.util
 
 import esmeta.LINE_SEP
-import esmeta.error.NotSupported.*
+import esmeta.error.NotSupported.{*, given}
 import esmeta.util.BaseUtils.*
 import esmeta.util.{ConcurrentPolicy => CP}
 import esmeta.util.SystemUtils.{concurrent => doConcurrent, fixedThread}
@@ -10,11 +10,23 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import java.util.concurrent.atomic.AtomicInteger
 
-// progress bar
+/** progress bar
+  *
+  * @note
+  *   complex form of for-comprenhension is not supported. see example.
+  * @example
+  * {{{
+  * // supported
+  * for { x <- ProgressBar("test", 1 to 100) } yield x + 1
+  * // not supported (silent fail)
+  * for { (a, b) <- ProgressBar("test", (1 to 100).zipWithIndex) } yield a + 1
+  * }}}
+  */
 case class ProgressBar[T](
   msg: String,
   iterable: Iterable[T],
-  notSupported: Iterable[(T, ReasonPath)] = Map[T, ReasonPath](),
+  notSupported: Iterable[(T, ReasonPath[String])] =
+    Map[T, ReasonPath[String]](),
   getName: (T, Int) => String = (_: T, idx) => s"${idx.toOrdinal} element",
   errorHandler: (Throwable, Summary, String) => Unit = (_, summary, name) =>
     summary.fail.add(name),
@@ -25,7 +37,7 @@ case class ProgressBar[T](
 ) extends Iterable[T] {
   // summary
   val summary =
-    val elem = Summary.Elem()
+    val elem = Summary.Elem[String, String]()
     for { ((x, reasonPath), idx) <- notSupported.zipWithIndex }
       elem.add(getName(x, idx), reasonPath)
     Summary(notSupported = elem)
@@ -52,7 +64,10 @@ case class ProgressBar[T](
   override val size: Int = baseSize + iterable.size
 
   // foreach function
-  override def foreach[U](f: T => U): Unit = {
+  override def foreach[U](f: T => U): Unit = map(f)
+
+  // map function
+  override def map[B](f: T => B): Iterable[B] = {
     val gcount = AtomicInteger(baseSize)
     val start = System.currentTimeMillis
     def updateTime: Unit =
@@ -85,14 +100,17 @@ case class ProgressBar[T](
 
     val tests = for ((x, idx) <- iterable.zipWithIndex) yield () =>
       val name = getName(x, baseSize + idx)
-      getError {
-        val passMsg = f(x).toString()
-        summary.pass.add(name, passMsg)
-      }.map(errorHandler(_, summary, name))
+      val res =
+        try {
+          val r = f(x)
+          summary.pass.add(name, r.toString())
+          Some(r)
+        } catch e => { errorHandler(e, summary, name); None }
       gcount.incrementAndGet
+      res
 
-    concurrent match
-      case CP.Single => tests.foreach(_.apply)
+    val result = concurrent match
+      case CP.Single => tests.map(_.apply)
       case CP.Fixed(n) =>
         val (service, eCtxt) = fixedThread(n)
         try {
@@ -105,6 +123,8 @@ case class ProgressBar[T](
     updateTime
 
     if (verbose) Thread.sleep(term)
+
+    result.withFilter(_.isDefined).map(_.get)
   }
 
   /** dump results */

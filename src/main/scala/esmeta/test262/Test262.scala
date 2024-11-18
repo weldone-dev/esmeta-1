@@ -4,7 +4,7 @@ import esmeta.*
 import esmeta.cfg.CFG
 import esmeta.cfgBuilder.CFGBuilder
 import esmeta.error.{NotSupported, InvalidExit, UnexpectedParseResult}
-import esmeta.error.NotSupported.*
+import esmeta.error.NotSupported.{*, given}
 import esmeta.es.*
 import esmeta.es.util.*
 import esmeta.interpreter.Interpreter
@@ -112,7 +112,7 @@ case class Test262(
     targetTests: List[Test],
     log: Boolean = false,
     pw: PrintWriter,
-    removed: Iterable[(Test, ReasonPath)] = Nil,
+    removed: Iterable[(Test, ReasonPath[String])] = Nil,
     useProgress: Boolean = false,
     useErrorHandler: Boolean = true,
     concurrent: CP = CP.Single,
@@ -383,7 +383,7 @@ case class Test262(
     )
 
   // logging mode for tests
-  private def logForTests[T](
+  private def logForTests[T, U](
     name: String,
     progressBar: ProgressBar[Test],
     pw: PrintWriter,
@@ -391,8 +391,9 @@ case class Test262(
     log: Boolean = false,
     logDir: String,
   )(
-    check: Test => Unit,
+    check: Test => U,
     postJob: String => Unit = _ => {},
+    successSummary: Iterable[U] => String = (_: Iterable[U]) => "",
   ): Unit =
     val summary: Summary = progressBar.summary
 
@@ -403,7 +404,7 @@ case class Test262(
       dumpFile(ESMeta.currentVersion, s"$logDir/esmeta-version")
 
     // run tests
-    for (test <- progressBar) check(test)
+    val iterCounts = for (test <- progressBar) yield check(test)
 
     // logging after tests
     if (log)

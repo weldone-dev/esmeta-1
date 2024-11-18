@@ -1,16 +1,16 @@
 package esmeta.error
 
 /** not supported errors */
-case class NotSupported(reasonPath: NotSupported.ReasonPath)
+case class NotSupported(reasonPath: NotSupported.ReasonPath[String])
   extends ESMetaError(s"${reasonPath.mkString("/")}", "NotSupported")
 object NotSupported:
   type Reason = String
-  type ReasonPath = List[Reason]
-  def apply(category: Category)(reasonPath: ReasonPath): NotSupported =
+  type ReasonPath[T] = List[T]
+  def apply(category: Category)(reasonPath: ReasonPath[String]): NotSupported =
     NotSupported(category.name :: reasonPath)
 
   /** implicit conversion from reasons to reason paths */
-  given Conversion[Reason, ReasonPath] = List(_)
+  given Conversion[Reason, ReasonPath[String]] = List(_)
 
   /** constants for categories of not supported features */
   enum Category(val name: String) {

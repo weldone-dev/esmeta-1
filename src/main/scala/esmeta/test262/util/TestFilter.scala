@@ -4,7 +4,7 @@ import esmeta.spec.Spec
 import esmeta.util.*
 import esmeta.util.BaseUtils.*
 import esmeta.util.SystemUtils.*
-import esmeta.error.NotSupported.*
+import esmeta.error.NotSupported.{*, given}
 import esmeta.error.NotSupported.Category.*
 import esmeta.test262.{*, given}
 import io.circe.*, io.circe.syntax.*
@@ -18,7 +18,7 @@ case class TestFilter(spec: Spec) {
     tests: List[Test],
     withYet: Boolean = false,
     features: Option[List[String]] = None,
-  ): (List[Test], Iterable[(Test, ReasonPath)]) =
+  ): (List[Test], Iterable[(Test, ReasonPath[String])]) =
     apply(tests, withYet, features.getOrElse(languageFeatures))
 
   /** target tests and removed tests by each reason */
@@ -26,8 +26,8 @@ case class TestFilter(spec: Spec) {
     tests: List[Test],
     withYet: Boolean,
     features: List[String],
-  ): (List[Test], Iterable[(Test, ReasonPath)]) =
-    var removedMap: Vector[(Test, ReasonPath)] = Vector()
+  ): (List[Test], Iterable[(Test, ReasonPath[String])]) =
+    var removedMap: Vector[(Test, ReasonPath[String])] = Vector()
     val targetTests = getFilters(withYet, features.toSet).foldLeft(tests) {
       case (tests, filter) =>
         for {
@@ -42,7 +42,7 @@ case class TestFilter(spec: Spec) {
   private def getFilters(
     withYet: Boolean,
     features: Set[String],
-  ): List[Test => Option[ReasonPath]] = List(
+  ): List[Test => Option[ReasonPath[String]]] = List(
     // harness files
     Harness -> ((test: Test) => test.relName.startsWith("harness")),
     // tests for internationalisation
@@ -81,15 +81,15 @@ case class TestFilter(spec: Spec) {
 
   given liftBool: Conversion[
     (Category, Test => Boolean),
-    Test => Option[ReasonPath],
+    Test => Option[ReasonPath[String]],
   ] = pair =>
     val (category, filter) = pair
     val lifted = (x: Test) => if (filter(x)) Some(List(category.name)) else None
     lifted
 
   given liftReason: Conversion[
-    (Category, Test => Option[Reason]),
-    Test => Option[ReasonPath],
+    (Category, Test => Option[String]),
+    Test => Option[ReasonPath[String]],
   ] = pair =>
     val (category, filter) = pair
     test => filter(test).map(List(category.name, _))

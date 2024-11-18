@@ -1,7 +1,7 @@
 package esmeta.util
 
 import esmeta.ESMeta.ENTRY_COMMAND
-import esmeta.error.NotSupported.*
+import esmeta.error.NotSupported.{*, given}
 import esmeta.util.Appender.Rule
 import esmeta.util.Summary.*
 import esmeta.util.SystemUtils.*
@@ -11,10 +11,10 @@ import scala.collection.concurrent.TrieMap
 import scala.jdk.CollectionConverters.IterableHasAsScala
 
 case class Summary(
-  notSupported: Elem = Elem(), // not yet supported elements
-  timeout: Elem = Elem(), // timeout elements
-  fail: Elem = Elem(), // failed elements
-  pass: Elem = Elem(), // passed elements
+  notSupported: Elem[String, String] = Elem(), // not yet supported elements
+  timeout: Elem[String, String] = Elem(), // timeout elements
+  fail: Elem[String, String] = Elem(), // failed elements
+  pass: Elem[String, String] = Elem(), // passed elements
 ) {
 
   // the number of not yet supported elements
@@ -97,12 +97,12 @@ case class Summary(
   private given Rule[(String, Int)] = {
     case (app, (name, count)) => app >> f"- $name: $count%,d"
   }
-  private given Rule[(Reason, Elem)] = {
+  private given [U]: Rule[(String, Elem[String, U])] = {
     case (app, (reason, elem @ Elem(seq, map))) =>
       app >> reason -> elem.size
       if (!map.isEmpty)
         var pairs = map.toList.sortBy(-_._2.size)
-        if (!seq.isEmpty) pairs :+= "others" -> Elem(seq)
+        if (!seq.isEmpty) pairs :+= "others" -> Elem[String, U](seq)
         app.wrapIterable("", "", "")(pairs)
       app
   }
@@ -111,12 +111,12 @@ case class Summary(
 object Summary {
 
   /** summary elements */
-  case class Elem(
-    seq: BlockingQueue[String] = LinkedBlockingQueue(),
-    map: TrieMap[Reason, Elem] = TrieMap(),
+  case class Elem[T, U](
+    seq: BlockingQueue[U] = LinkedBlockingQueue[U](),
+    map: TrieMap[T, Elem[T, U]] = TrieMap[T, Elem[T, U]](),
   ) {
 
-    def flat: List[(ReasonPath, String)] =
+    def flat: List[(ReasonPath[T], U)] =
       val mapElems = for {
         (reason, elem) <- map.toList;
         (reasonPath, term) <- elem.flat
@@ -125,7 +125,7 @@ object Summary {
       seqElems ++ mapElems
 
     /** all elements */
-    def all: List[String] =
+    def all: List[U] =
       val mapElems =
         for { (_, elem) <- map.toList; elem <- elem.all } yield elem
       val seqElems = seq.asScala.toList
@@ -140,11 +140,11 @@ object Summary {
       seq.size + (for { (_, elem) <- map } yield elem.size).sum
 
     /** add data */
-    def add(data: String, reason: Reason): Unit = add(data, List(reason))
-    def add(data: String, reasons: ReasonPath = Nil): Unit = reasons match
+    def add(data: U, reason: T): Unit = add(data, List(reason))
+    def add(data: U, reasons: ReasonPath[T] = Nil): Unit = reasons match
       case Nil => seq.offer(data)
       case reason :: remain =>
-        map.getOrElseUpdate(reason, Elem()).add(data, remain)
+        map.getOrElseUpdate(reason, Elem[T, U]()).add(data, remain)
 
     /** dump results */
     def dumpTo(name: String, filename: String): Unit = dumpJson(
@@ -156,10 +156,13 @@ object Summary {
 
     /** conversion to JSON */
     def toJson: Json =
-      lazy val seqJson = Json.fromValues(seq.asScala.map(Json.fromString))
+      lazy val seqJson =
+        Json.fromValues(seq.asScala.map(u => Json.fromString(u.toString())))
       if (map.isEmpty) seqJson
       else
-        val mapValues = map.toList.map { case (r, e) => r -> e.toJson }
+        val mapValues = map.toList.map {
+          case (r, e) => (r.toString()) -> e.toJson
+        }
         Json.fromFields(
           if (seq.isEmpty) mapValues else mapValues :+ ("others" -> seqJson),
         )
