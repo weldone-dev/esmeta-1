@@ -25,14 +25,19 @@ class PEvalESSmallTest extends PEvalTest {
 
       if !decls.isEmpty then {
 
-        val overloads = ESPartialEvaluator.peval(
+        val (overloadByAst, overloadByName) = ESPartialEvaluator.peval(
           ESMetaTest.program,
           decls.zipWithIndex.map((fd, idx) => (fd, Some(s"__PEVALED__${idx}"))),
         )( /* run with default option */ );
 
-        val sfMap = ESPartialEvaluator.genMap(overloads)
+        val sfMap =
+          ESPartialEvaluator.genMap(overloadByAst)
         val newCFG = CFGBuilder
-          .byIncremental(ESMetaTest.cfg, overloads.map(_._1), sfMap)
+          .byIncremental(
+            ESMetaTest.cfg,
+            overloadByAst.map(_._1) ::: overloadByName,
+            sfMap,
+          )
           .getOrElse(fail("Cfg incremental build fail"))
 
         PEvalTest.checkExit(

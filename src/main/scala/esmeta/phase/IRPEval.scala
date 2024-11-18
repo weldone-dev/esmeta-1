@@ -31,22 +31,27 @@ case object IRPEval extends Phase[Program, Program] {
     else
       val logger = Some(getPrintWriter(s"$IRPEVAL_LOG_DIR/log"))
       Program(
-        prog.funcs.map {
-          case f if !f.params.isEmpty => f
+        prog.funcs.flatMap {
+          case f if !f.params.isEmpty => f :: Nil
           case f => {
-            val newFunc =
+            val (newF, forks) =
               PartialEvaluator.run(prog, f) { (_renamer, _pst) => }(
                 logPW = logger,
                 detailPW = None, // TODO add to Config
                 simplifyLevel = config.simplify,
                 timeLimit = None,
               )
+            // `forks` are called by name, and newF keeps original name
+            // since it has empty params, it will be called by its original name
+            val fs = newF :: forks;
             if (config.log) then
-              val pw = getPrintWriter(s"$IRPEVAL_LOG_DIR/${f.name}.ir")
-              pw.println(newFunc.toString())
-              pw.flush
-              pw.close
-            newFunc
+              for (f <- fs) do {
+                val pw = getPrintWriter(s"$IRPEVAL_LOG_DIR/${f.name}.ir")
+                pw.println(newF.toString())
+                pw.flush
+                pw.close
+              }
+            fs
           }
         },
         prog.spec,

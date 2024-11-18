@@ -32,12 +32,15 @@ object ESPartialEvaluator {
     cp: ConcurrentPolicy = ConcurrentPolicy.Single,
     verbose: Boolean = false,
   ): Program = {
-    val overloads = peval(
+    val (overloadByAst, overloadByName) = peval(
       program = program,
       decls = decls,
     )(log, detail, timeLimit, simplifyLevel, cp, verbose)
-    val sfMap = genMap(overloads)
-    val newProg = Program(overloads.map(_._1) ::: program.funcs, program.spec)
+    val sfMap = genMap(overloadByAst)
+    val newProg = Program(
+      overloadByAst.map(_._1) ::: overloadByName ::: program.funcs,
+      program.spec,
+    )
     newProg.sfMap = sfMap
     newProg
   }
@@ -53,16 +56,16 @@ object ESPartialEvaluator {
     cp: ConcurrentPolicy = ConcurrentPolicy.Single,
     verbose: Boolean = false,
   ): CFG = {
-    val overloads = peval(
+    val (overloadByAst, overloadByName) = peval(
       program = cfg.program,
       decls = decls,
     )(log, detail, timeLimit, simplifyLevel, cp, verbose)
-    val sfMap = genMap(overloads)
+    val sfMap = genMap(overloadByAst)
 
     // TODO log execution time
     val (duration, newCfg) = time {
       CFGBuilder
-        .byIncremental(cfg, overloads.map(_._1), sfMap)
+        .byIncremental(cfg, overloadByAst.map(_._1) ::: overloadByName, sfMap)
         .getOrElse(???) // dszxCfg incremental build fail
     }
     newCfg
@@ -122,6 +125,14 @@ object ESPartialEvaluator {
 
   /* private helpers  */
 
+  /** peval multiple overloads
+    *
+    * @return
+    *   (List[(Func, ESFuncAst)], List[Func])
+    * @notes
+    *   first list is the target overloads, second list is the forked overloads
+    *   forked overloads are called by its name, specialized check is not needed
+    */
   def peval[B[_] <: Iterable[_]](
     program: Program,
     decls: List[(ESHelper.ESFuncAst, Option[String])],
@@ -132,7 +143,7 @@ object ESPartialEvaluator {
     simplifyLevel: Int = 1,
     cp: ConcurrentPolicy = ConcurrentPolicy.Single,
     verbose: Boolean = false,
-  ): List[(Func, ESHelper.ESFuncAst)] = {
+  ): (List[(Func, ESHelper.ESFuncAst)], List[Func]) = {
     // TODO can we optimize this?
     val target = program.funcs
       .find(_.name == TARGET)
@@ -151,7 +162,7 @@ object ESPartialEvaluator {
       detail = false,
     )
 
-    val lst = for (pair <- progress) yield {
+    val lst = (for (pair <- progress) yield {
       val (decl, newName) = pair
       Try {
         PartialEvaluator.run(program, target)(prepare(decl))(
@@ -161,8 +172,11 @@ object ESPartialEvaluator {
           simplifyLevel = 2,
         )
       }.map((_, decl)).toOption.get
-    }
-    lst.toList
+    }).toList
+
+    val overloadByName = lst.flatMap { case ((_, forks), _) => forks }
+    val overloadByAst = lst.map { case ((f, forks), ast) => (f, ast) }
+    (overloadByAst, overloadByName)
   }
 
   private def prepare(esFuncDecl: ESHelper.ESFuncAst)(

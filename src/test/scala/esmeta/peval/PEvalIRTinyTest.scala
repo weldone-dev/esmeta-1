@@ -32,16 +32,17 @@ object PEvalIRTinyTest {
   def interpFile(filename: String): State =
     val prog = Program.fromFile(filename)
     val pevaledProg = Program(
-      prog.funcs.map {
-        case f if !f.params.isEmpty => f
+      prog.funcs.flatMap {
+        case f if !f.params.isEmpty => f :: Nil
         case f => {
-          PartialEvaluator
+          val (newF, forks) = PartialEvaluator
             .run(prog, f) { (_renamer, _pst) => /* do nothing */ }(
               logPW = None,
               detailPW = None,
               simplifyLevel = 0,
               timeLimit = None,
             )
+          newF :: forks
         }
       },
       prog.spec,

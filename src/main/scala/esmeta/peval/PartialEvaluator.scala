@@ -39,10 +39,11 @@ class PartialEvaluator private (
   lazy val getFunc = (fname: String) =>
     funcMap.getOrElse(fname, throw UnknownFunc(fname))
 
+  lazy val forked = MSet.empty[Func];
+
   def peval(ref: Ref, pst: PState)(using
     MSet[(Var, Var)],
-  ): (Predict[RefTarget], Ref) = ref match
-
+  ): (Predict[RefTarget], Ref) = ref match {
     case x: Var =>
       val newVar = renamer.get(x, pst.context)
       (Known(VarTarget(newVar)), newVar)
@@ -55,12 +56,13 @@ class PartialEvaluator private (
         case (Known(b), Known(f)) => Known(FieldTarget(b, f))
         case _                    => (Unknown)
       (tgt, Field(newBase, newField))
+  }
 
   def peval(expr: Expr, pst: PState)(using
     // ad-hoc fix for EClo
     captures: MSet[(Var, Var)],
-  ): (Predict[Value], Expr) =
-    val result = expr match
+  ): (Predict[Value], Expr) = {
+    val result = expr match {
       case ERef(ref) =>
         val (tgt, newRef) = peval(ref, pst);
         pst(tgt) match
@@ -258,11 +260,13 @@ class PartialEvaluator private (
       case _ =>
         logging("expr", s"NOT SUPPORTED EXPR! $expr")
         (Unknown, RenameWalker(expr)(using renamer, pst))
+    }
     logging("expr", s"$expr -> $result")
     val (v, newE) = result
     if (detailPW.isDefined && !v.isKnownLiteral) then
       (v, newE.appendCmt(v.toString(detail = true)))
     else (v, newE)
+  }
 
   def peval(inst: Inst, pst: PState)(using
     captures: MSet[(Var, Var)],
@@ -306,67 +310,17 @@ class PartialEvaluator private (
                   throw InvalidAstField(syn, Str(method)),
                 )
 
-                val calleeCtx = PContext(
-                  func = sdo,
-                  locals = MMap.empty,
-                  sensitivity = newCallCount,
-                  ret = Zero,
-                );
-
-                val baseRep = renamer.newTempCount;
-                val subpath = AstHelper.getSubgraphPath(syn, ast0);
-
-                val allocations =
-                  (IAssign(Temp(baseRep), newBase)) :: setLocals[PClo](
-                    at = calleeCtx,
-                    params = sdo.params.map(p =>
-                      Param(
-                        renamer.get(p.lhs, calleeCtx),
-                        p.ty,
-                        p.optional,
-                        p.specParam,
-                      ),
-                    ),
-
-                    // TODO : There is no way to print ast0 as expression this should be removed somehow
-                    /* Ad-hoc fix */
-
-                    args = (Known(AstValue(ast0)) -> ERef(
-                      subpath.foldLeft[Ref](Temp(baseRep))((acc, idx) =>
-                        Field(acc, EMath(idx)),
-                      ),
-                    )) :: vs,
-                    func = sdo,
-                  )
-
-                val calleePst = {
-                  val fresh = pst.copied;
-                  fresh.callStack ::= PCallContext(pst.context /* , newLhs */ )
-                  fresh.context = calleeCtx
-                  fresh
-                }
-
-                Try {
-                  val (body, after) = peval(sdo.body, calleePst)
-                  after.callStack match
-                    case Nil => /* never */ ???
-                    case callerCtx :: rest =>
-                      val calleeCtx = after.context;
-                      after.callStack = rest
-                      after.context = callerCtx.ctxt
-                      after.define(
-                        newLhs,
-                        calleeCtx.ret.toPredict(throw NoReturnValue),
-                      )
-                      (ISeq(List(ISeq(allocations), body)), after)
-                }.recoverWith {
-                  case NoMoreInline() =>
-                    pst.define(newLhs, Unknown)
-                    pst.heap.clear(vs.map(_._1)) // ...
-                    Success(
-                      (ISdoCall(newLhs, newBase, method, vs.map(_._2)), pst),
-                    )
-                }.get
+                sdocallClo(
+                  sdo: Func,
+                  newBase: Expr,
+                  method: String,
+                  vs: List[(Predict[Value], Expr)],
+                  pst: PState,
+                  ast0: Ast,
+                  newLhs: Local,
+                  newCallCount: Int,
+                  syn: Syntactic,
+                )
               }
 
               case lex: Lexical =>
@@ -384,58 +338,6 @@ class PartialEvaluator private (
             case Known(pclo @ PClo(_, _))
                 if shouldComputeCall(call, pclo, vs) =>
               callClo(call, pclo, newFexpr, vs, pst)
-            case Known(pclo @ PClo(callee, captured))
-                if false /* turn off branch temporarily */ =>
-              val calleeCtx = PContext(
-                func = callee,
-                locals = MMap.empty,
-                sensitivity = newCallCount,
-                ret = Zero,
-              );
-
-              val allocations = setLocals[PClo](
-                at = calleeCtx,
-                params = callee.params.map(p =>
-                  Param(
-                    renamer.get(p.lhs, calleeCtx),
-                    p.ty,
-                    p.optional,
-                    p.specParam,
-                  ),
-                ),
-
-                // TODO : There is no way to print ast0 as expression this should be removed somehow
-                /* Ad-hoc fix */
-                args = vs,
-                func = callee,
-              )
-
-              val calleePst = {
-                val fresh = pst.copied;
-                fresh.callStack ::= PCallContext(pst.context /* , newLhs */ )
-                fresh.context = calleeCtx
-                fresh
-              }
-
-              Try {
-                val (body, after) = peval(callee.body, calleePst)
-                after.callStack match
-                  case Nil => /* never */ ???
-                  case callerCtx :: rest =>
-                    val calleeCtx = after.context;
-                    after.callStack = rest
-                    after.context = callerCtx.ctxt
-                    val retVal = calleeCtx.ret
-                      .toPredict(throw NoReturnValue)
-                    after.define(newLhs, retVal)
-                    (ISeq(List(ISeq(allocations), body)), after)
-              }.recoverWith {
-                case NoMoreInline() =>
-                  pst.define(newLhs, Unknown)
-                  pst.heap.clear(vs.map(_._1))
-                  Success(ICall(newLhs, newFexpr, vs.map(_._2)), pst)
-              }.get
-
             case Known(_: PClo) /* with Unknown argument */ =>
               pst.define(newLhs, Unknown)
               pst.heap.clear(vs.map(_._1))
@@ -586,7 +488,84 @@ class PartialEvaluator private (
       case ICall(_, _, _)       => vs.forall(_._1.isDefined)
   }
 
-  def callClo(
+  private def sdocallClo(
+    sdo: Func,
+    newBase: Expr,
+    method: String,
+    vs: List[(Predict[Value], Expr)],
+    pst: PState,
+    ast0: Ast,
+    newLhs: Local,
+    newCallCount: Int,
+    syn: Syntactic,
+  )(using captures: MSet[(Var, Var)]): (Inst, PState) = {
+
+    val calleeCtx = PContext(
+      func = sdo,
+      locals = MMap.empty,
+      sensitivity = newCallCount,
+      ret = Zero,
+    );
+
+    val baseRep = renamer.newTempCount;
+    val subpath = AstHelper.getSubgraphPath(syn, ast0);
+
+    val allocations =
+      (IAssign(Temp(baseRep), newBase)) :: setLocals[PClo](
+        at = calleeCtx,
+        params = sdo.params.map(p =>
+          Param(
+            renamer.get(p.lhs, calleeCtx),
+            p.ty,
+            p.optional,
+            p.specParam,
+          ),
+        ),
+
+        // TODO : There is no way to print ast0 as expression this should be removed somehow
+        /* Ad-hoc fix */
+
+        args = (Known(AstValue(ast0)) -> ERef(
+          subpath.foldLeft[Ref](Temp(baseRep))((acc, idx) =>
+            Field(acc, EMath(idx)),
+          ),
+        )) :: vs,
+        func = sdo,
+      )
+
+    val calleePst = {
+      val fresh = pst.copied;
+      fresh.callStack ::= PCallContext(
+        pst.context, /* , newLhs */
+      )
+      fresh.context = calleeCtx
+      fresh
+    }
+
+    Try {
+      val (body, after) = peval(sdo.body, calleePst)
+      after.callStack match
+        case Nil => /* never */ ???
+        case callerCtx :: rest =>
+          val calleeCtx = after.context;
+          after.callStack = rest
+          after.context = callerCtx.ctxt
+          after.define(
+            newLhs,
+            calleeCtx.ret.toPredict(throw NoReturnValue),
+          )
+          (ISeq(List(ISeq(allocations), body)), after)
+    }.recoverWith {
+      case NoMoreInline() =>
+        pst.define(newLhs, Unknown)
+        pst.heap.clear(vs.map(_._1)) // ...
+        Success(
+          (ISdoCall(newLhs, newBase, method, vs.map(_._2)), pst),
+        )
+    }.get
+  }
+
+  private def callClo(
     icall: ICall,
     pclo: PClo,
     newFexpr: Expr,
@@ -763,13 +742,20 @@ object PartialEvaluator {
     (renamer, pst)
   }
 
-  /* run partial evaluation */
+  /* run partial evaluation
+   *
+   * @param program ir program (set of functions)
+   * @param func target function to evaluate
+   * @param initialize state initializer to create proper state for func
+   *
+   * @return (result function, additionally forked functions)
+   */
   def run(program: Program, func: Func)(initialize: (Renamer, PState) => Unit)(
     logPW: Option[PrintWriter] = None,
     detailPW: Option[PrintWriter] = None,
     timeLimit: Option[Int] = None,
     simplifyLevel: Int = 0,
-  ) = {
+  ): (Func, List[Func]) = {
     val (renamer, pst) = createCleanState(func)
     initialize(renamer, pst)
     val pev = PartialEvaluator(
@@ -780,7 +766,8 @@ object PartialEvaluator {
       timeLimit = timeLimit,
       renamer = renamer,
     )
-    pev.compute(func, pst, None)._1
+    val result = pev.compute(func, pst, None)._1
+    (result, pev.forked.toList)
   }
 
 }
