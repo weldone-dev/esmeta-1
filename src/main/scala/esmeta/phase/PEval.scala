@@ -1,35 +1,19 @@
 package esmeta.phase
 
 import esmeta.*
-import esmeta.cfg.CFG
-import esmeta.cfgBuilder.CFGBuilder
 import esmeta.error.*
 import esmeta.es.*
-import esmeta.es.builtin.EXECUTION_STACK
-import esmeta.interpreter.*
-import esmeta.ir.{Func, Program, Inst, Param, Global, Name, Temp}
-import esmeta.parser.{ESParser}
+import esmeta.ir.{Func, Program}
 import esmeta.peval.*
 import esmeta.peval.util.*
-import esmeta.peval.pstate.*
-import esmeta.state.*
+import esmeta.spec.Spec
 import esmeta.util.*
 import esmeta.util.SystemUtils.*
-
-import scala.collection.mutable.{Map as MMap}
-import scala.util.{Try, Success, Failure}
-
-// TODO sort imports
-import esmeta.spec.Spec
-import esmeta.peval.Unknown.get
-import scala.collection.immutable.HashMap
 
 /** `peval` phase */
 case object PEval extends Phase[Program, Program] {
   val name = "peval"
   val help = "partial-evaluate a pre-defined target AO using an ES file."
-
-  val TARGET_NAME = ORDINARY_CALL_EVAL_BODY
 
   def apply(
     program: Program,
@@ -41,9 +25,11 @@ case object PEval extends Phase[Program, Program] {
       throw new PEvalOptError("config.simplify should be in [0, 3]")
 
     val target = program.funcs
-      .find(_.name == TARGET_NAME)
+      .find(_.name == ES_PE_TARGET)
       .getOrElse(
-        throw PEvalOptError(s"peval target ${TARGET_NAME} not found in Program"),
+        throw PEvalOptError(
+          s"peval target ${ES_PE_TARGET} not found in Program",
+        ),
       )
 
     val filename = getFirstFilename(cmdConfig, name)
@@ -52,23 +38,24 @@ case object PEval extends Phase[Program, Program] {
       AstHelper.getPEvalTargetAsts(ast)
     }
 
-    val overloads = ESPartialEvaluator.peval(
+    val newProg = ESPartialEvaluator.pevalThenConstruct(
       program,
       fds.zipWithIndex.map((fd, idx) =>
         (fd, Some(s"${target.name}PEvaled${idx}")),
       ),
+    )(
+      log = None,
+      detail = None,
+      timeLimit = None,
+      simplifyLevel = 1,
     )
 
     if (config.log) then
       val pw = getPrintWriter(s"$PEVAL_LOG_DIR/summary")
       pw.println(s"Found ${fds.length} function declarations in ${filename}");
-      pw.println(s"Generated ${overloads.size} overloads (should be 100%)");
       pw.flush
-      dumpTo(PEVAL_LOG_DIR, overloads.map(_._1));
+    // dumpTo(PEVAL_LOG_DIR, overloads.map(_._1));
 
-    val sfMap = ESPartialEvaluator.genMap(overloads)
-    val newProg = Program(overloads.map(_._1) ::: program.funcs, program.spec)
-    newProg.sfMap = sfMap
     newProg
   }
 

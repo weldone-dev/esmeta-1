@@ -8,7 +8,8 @@ import esmeta.error.NotSupported.{*, given}
 import esmeta.es.*
 import esmeta.es.util.*
 import esmeta.interpreter.Interpreter
-import esmeta.parser.ESParser
+import esmeta.parser.{AstFrom, ESParser}
+import esmeta.peval.{ES_PE_TARGET}
 import esmeta.state.*
 import esmeta.test262.util.*
 import esmeta.util.*
@@ -17,11 +18,9 @@ import esmeta.util.{ConcurrentPolicy => CP}
 import esmeta.util.SystemUtils.*
 import java.io.PrintWriter
 import java.util.concurrent.TimeoutException
-import esmeta.peval.{
-  ORDINARY_CALL_EVAL_BODY,
-  PartialEvaluator,
-  ESPartialEvaluator,
-}
+
+// todo sort imports
+import esmeta.peval.ESPartialEvaluator
 import esmeta.peval.util.{AstHelper, Test262PEvalPolicy}
 
 import java.nio.file.FileAlreadyExistsException
@@ -50,31 +49,6 @@ case class Test262(
 
   /** basic harness files */
   lazy val basicHarness = getHarness("assert.js")() ++ getHarness("sta.js")()
-
-  lazy val allHarnesses =
-    val harnesses =
-      for {
-        file <- walkTree(s"$TEST262_DIR/harness")
-        if file.isFile && jsFilter(file.getName)
-        hs <- parseFile(file.toString).flattenStmt
-      } yield hs
-    harnesses.toList
-
-  lazy val cfgWithPEvaledHarness =
-    val target = cfg.fnameMap.getOrElse(ORDINARY_CALL_EVAL_BODY, ???).irFunc
-    val overloads = ESPartialEvaluator.peval(
-      program = cfg.program,
-      decls = AstHelper
-        .getPEvalTargetAsts(mergeStmt(allHarnesses))
-        .zipWithIndex
-        .map {
-          case (decl, idx) => (decl, Some(s"${target.name}PEvaled${idx}"))
-        },
-    )
-    val sfMap = ESPartialEvaluator.genMap(overloads)
-    CFGBuilder
-      .byIncremental(cfg, overloads.map(_._1), sfMap)
-      .getOrElse(???) // Cfg incremental build fail
 
   /** specification */
   val spec = cfg.spec
@@ -233,21 +207,27 @@ case class Test262(
       ,
       // dump coverage
       logDir => if (useCoverage) cov.dumpTo(logDir),
+      successSummary = iterCounts => {
+        val (totalIterCount, meanIterCount) =
+          // if this line fails - it means st(GLOBAL_RESULT_ITER_COUNT above is not `Math`. similar to InvalidExit)
+          val iters = iterCounts.map(_.asMath)
+          (iters.sum, iters.sum / iters.size)
+        s"total iter count: $totalIterCount${LINE_SEP}mean iter count:$meanIterCount${LINE_SEP}"
+      },
     )
 
     // close log file
     logPW.close()
 
-    if (log && peval.harness.shouldCompute) then
-      // TODO only log result of partial evaluation
+    if (log) then
       for {
-        f <- cfgWithPEvaledHarness.funcs
-        if f.name.contains("PEvaled") // ad-hoc fix
+        f <- cfg.funcs
+        if f.irFunc.trueName.isDefined
       } {
         val pevalPw = getPrintWriter(
           s"$THIS_TEST_LOG_DIR/peval/${f.name}.ir",
         )
-        pevalPw.println(f)
+        pevalPw.println(f.irFunc)
         pevalPw.close
       }
 
@@ -324,56 +304,27 @@ case class Test262(
   ): State =
     val (ast, fileAst) = loadTestAndAst(filename)
     val code = ast.toString(grammar = Some(cfg.grammar)).trim
-
-    val st =
-      val target = cfg.fnameMap.getOrElse(ORDINARY_CALL_EVAL_BODY, ???).irFunc
-      lazy val defaultSetting = Initialize(cfg, code, Some(ast), Some(filename))
-      if (peval.harness.shouldCompute) then
-        val _ = cfgWithPEvaledHarness
-      if (peval.isNever) then defaultSetting
-      else {
-        if (peval.individual.isNever /* && peval.harness.shouldCompute */ ) then {
-          if (peval.harness.shouldUse) then
-            Initialize(cfgWithPEvaledHarness, code, Some(ast), Some(filename))
-          else defaultSetting
-        } else
-          val overloads = ESPartialEvaluator.peval(
-            program = cfg.program,
-            decls = AstHelper.getPEvalTargetAsts(fileAst).zipWithIndex.map {
-              case (decl, idx) =>
-                (decl, Some(s"${target.name}PEvaled${idx + 2048}"))
-            },
-            // Ad-hoc fix : add 2048 to idx to avoid name conflict
-          )
-
-          if (log) then
-            for ((f, _) <- overloads) {
-              val pevalPw = getPrintWriter(
-                s"$logDir/peval/${f.name}.ir",
-              )
-              pevalPw.println(f)
-              pevalPw.close
-            }
-
-          val sfMap =
-            ESPartialEvaluator.genMap(overloads)
-          // 'cfgWithPEvaledHarness' is computed
-          val newCfg =
-            CFGBuilder
-              .byIncremental(
-                if (peval.harness.shouldUse) then cfgWithPEvaledHarness
-                else cfg,
-                overloads.map(_._1),
-                sfMap,
-              )
-              .getOrElse(???) // Cfg incremental build fail
-
-          if (peval.individual.shouldUse) then
-            Initialize(newCfg, code, Some(ast), Some(filename))
-          else if (peval.harness.shouldUse) then
-            Initialize(cfgWithPEvaledHarness, code, Some(ast), Some(filename))
-          else defaultSetting
-      }
+    val chosenCfg =
+      if (!peval.individual.shouldCompute) then cfg
+      else /* peval.individual.shouldCompute */
+        {
+          val newCfg = ESPartialEvaluator.pevalThenConstructCFG(
+            cfg,
+            AstHelper
+              .getPEvalTargetAsts(fileAst)
+              .zipWithIndex
+              .map((decl, idx) =>
+                (
+                  decl,
+                  Some(s"${ES_PE_TARGET}PEvaled${idx + 2048}"),
+                ),
+              // Ad-hoc fix : add 2048 to idx to avoid name conflict
+              ),
+          )(None, None, None)
+          if (peval.individual.shouldUse) then newCfg
+          else cfg
+        }
+    val st = Initialize(chosenCfg, code, Some(ast), Some(filename))
     Interpreter(
       st = st,
       log = log,
@@ -412,20 +363,24 @@ case class Test262(
       val summaryStr =
         if (postSummary.isEmpty) s"$summary"
         else s"$summary$LINE_SEP$postSummary"
-      dumpFile(s"Test262 $name test summary", summaryStr, s"$logDir/summary")
-
-      // ad-hoc logging for iteration count
-      val (totalIterCount, meanIterCount) =
-        import scala.math.BigInt
-        val iters = (for {
-          (reason, _) <- summary.pass.flat
-          iter = BigInt(reason.mkString("").toLong)
-        } yield iter)
-        (iters.sum, iters.sum / iters.size)
+      val additionalSummary = successSummary(iterCounts)
       dumpFile(
-        s"total: $totalIterCount\nmean:$meanIterCount",
-        s"$logDir/iteration-count-summary",
+        s"Test262 $name test summary",
+        s"${additionalSummary}${LINE_SEP}${summaryStr}",
+        s"$logDir/summary",
       )
 
 }
-object Test262 extends Git(TEST262_DIR)
+object Test262 extends Git(TEST262_DIR) {
+
+  def getAllHarnesses(scriptParser: AstFrom) =
+    val harnesses =
+      for {
+        file <- walkTree(s"$TEST262_DIR/harness")
+        if file.isFile && jsFilter(file.getName)
+        hs <- scriptParser.fromFile(file.toString).flattenStmt
+      } yield hs
+    harnesses.toList
+
+  def pevalHarness = { ??? }
+}

@@ -21,21 +21,14 @@ class PEvalESSmallTest extends PEvalTest {
       val insts = NormalInsts.fromFile(irName)
 
       val ast = PEvalTest.scriptParser.fromFile(jsName)
-      val target = ESMetaTest.program.funcs
-        .find(_.name == ORDINARY_CALL_EVAL_BODY)
-        .getOrElse(
-          fail(s"target ${ORDINARY_CALL_EVAL_BODY} not found in Program"),
-        )
       val decls = AstHelper.getPEvalTargetAsts(ast)
 
       if !decls.isEmpty then {
 
         val overloads = ESPartialEvaluator.peval(
           ESMetaTest.program,
-          decls.zipWithIndex.map((fd, idx) =>
-            (fd, Some(s"${target.name}${idx}")),
-          ),
-        )
+          decls.zipWithIndex.map((fd, idx) => (fd, Some(s"__PEVALED__${idx}"))),
+        )( /* run with default option */ );
 
         val sfMap = ESPartialEvaluator.genMap(overloads)
         val newCFG = CFGBuilder

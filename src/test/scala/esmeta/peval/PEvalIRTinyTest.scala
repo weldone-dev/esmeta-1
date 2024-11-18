@@ -37,10 +37,9 @@ object PEvalIRTinyTest {
         case f => {
           PartialEvaluator
             .run(prog, f) { (_renamer, _pst) => /* do nothing */ }(
-              log = false,
-              detail = false,
-              simplifyLevel = 0,
               logPW = None,
+              detailPW = None,
+              simplifyLevel = 0,
               timeLimit = None,
             )
         }

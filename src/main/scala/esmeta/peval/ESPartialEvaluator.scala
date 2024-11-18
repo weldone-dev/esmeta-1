@@ -1,76 +1,71 @@
 package esmeta.peval
 
+import esmeta.cfg.CFG
+import esmeta.cfgBuilder.CFGBuilder
 import esmeta.error.{PartialEvaluatorError}
 import esmeta.es.*
 import esmeta.ir.*
 import esmeta.peval.pstate.PState
 import esmeta.peval.util.*
 import esmeta.state.*
-
+import esmeta.util.{ProgressBar, ConcurrentPolicy}
+import esmeta.util.BaseUtils.{time}
+import java.io.PrintWriter
+import math.Ordered.orderingToOrdered
+import scala.concurrent.duration.Duration
 import scala.collection.immutable.SortedMap
 import scala.util.Try
-import esmeta.util.BaseUtils.failMsg
 
 /** Helper for IR PartialEvaluator using ES knowledge */
 object ESPartialEvaluator {
 
-  def peval[B[_] <: Iterable[_]](
+  lazy val TARGET = ORDINARY_CALL_EVAL_BODY
+
+  def pevalThenConstruct(
     program: Program,
     decls: List[(ESHelper.ESFuncAst, Option[String])],
-  ): List[(Func, ESHelper.ESFuncAst)] = {
-    // TODO can we optimize this?
-    val target = program.funcs
-      .find(_.name == ORDINARY_CALL_EVAL_BODY)
-      .getOrElse(
-        throw PartialEvaluatorError(
-          s"`ESPartialEvaluator.peval` is only callable with  ${ORDINARY_CALL_EVAL_BODY}",
-        ),
-      )
-
-    for { (decl, newName) <- decls } yield {
-      Try {
-        PartialEvaluator.run(program, target)(prepare(decl))(
-          log = false,
-          detail = false,
-          simplifyLevel = 2,
-          logPW = None,
-          timeLimit = None,
-        )
-      }.map((_, decl)).toOption.get
-    }
+  )(
+    log: Option[PrintWriter] = None,
+    detail: Option[PrintWriter] = None,
+    timeLimit: Option[Int] = None,
+    simplifyLevel: Int = 1,
+    cp: ConcurrentPolicy = ConcurrentPolicy.Single,
+    verbose: Boolean = false,
+  ): Program = {
+    val overloads = peval(
+      program = program,
+      decls = decls,
+    )(log, detail, timeLimit, simplifyLevel, cp, verbose)
+    val sfMap = genMap(overloads)
+    val newProg = Program(overloads.map(_._1) ::: program.funcs, program.spec)
+    newProg.sfMap = sfMap
+    newProg
   }
 
-  private def prepare(esFuncDecl: ESHelper.ESFuncAst)(
-    renamer: Renamer,
-    pst: PState,
-  ): (Renamer, PState) = {
-    val addr_func_obj_record = renamer.newAddr
+  def pevalThenConstructCFG(
+    cfg: CFG,
+    decls: List[(ESHelper.ESFuncAst, Option[String])],
+  )(
+    log: Option[PrintWriter] = None,
+    detail: Option[PrintWriter] = None,
+    timeLimit: Option[Int] = None,
+    simplifyLevel: Int = 1,
+    cp: ConcurrentPolicy = ConcurrentPolicy.Single,
+    verbose: Boolean = false,
+  ): CFG = {
+    val overloads = peval(
+      program = cfg.program,
+      decls = decls,
+    )(log, detail, timeLimit, simplifyLevel, cp, verbose)
+    val sfMap = genMap(overloads)
 
-    /* NOTE: globals are not modified, so we can use the same globals for all overloads
-    val init = new Initialize(cfg)
-    val globals = for {
-      (x, v) <- init.initGlobal
-      pv = v match
-        case _: Addr => Unknown
-        case _       => Known(v)
-    } yield x -> pv */
-
-    pst.allocRecord(
-      addr_func_obj_record,
-      esFuncDecl.toRecordTname,
-      esFuncDecl.toRecordEntries,
-    )
-
-    pst.define(
-      renamer.get(Name("F"), pst.context),
-      Known(addr_func_obj_record),
-    )
-    pst.define(
-      renamer.get(Name("argumentsList"), pst.context),
-      Unknown,
-    );
-
-    (renamer, pst)
+    // TODO log execution time
+    val (duration, newCfg) = time {
+      CFGBuilder
+        .byIncremental(cfg, overloads.map(_._1), sfMap)
+        .getOrElse(???) // dszxCfg incremental build fail
+    }
+    newCfg
   }
 
   def genMap(
@@ -121,11 +116,92 @@ object ESPartialEvaluator {
         go(args, st).get
     }
     SpecializedFuncs(
-      Map(ORDINARY_CALL_EVAL_BODY -> newGo),
+      Map(TARGET -> newGo),
     )
   }
 
-  import math.Ordered.orderingToOrdered
+  /* private helpers  */
+
+  def peval[B[_] <: Iterable[_]](
+    program: Program,
+    decls: List[(ESHelper.ESFuncAst, Option[String])],
+  )(
+    logPW: Option[PrintWriter] = None,
+    detailPW: Option[PrintWriter] = None,
+    timeLimit: Option[Int] = None,
+    simplifyLevel: Int = 1,
+    cp: ConcurrentPolicy = ConcurrentPolicy.Single,
+    verbose: Boolean = false,
+  ): List[(Func, ESHelper.ESFuncAst)] = {
+    // TODO can we optimize this?
+    val target = program.funcs
+      .find(_.name == TARGET)
+      .getOrElse(
+        throw PartialEvaluatorError(
+          s"`ESPartialEvaluator.peval` is only callable with  ${TARGET}",
+        ),
+      )
+
+    val progress = ProgressBar(
+      "Partial Evaluation",
+      decls,
+      concurrent = cp,
+      timeLimit = timeLimit,
+      verbose = verbose,
+      detail = false,
+    )
+
+    val lst = for (pair <- progress) yield {
+      val (decl, newName) = pair
+      Try {
+        PartialEvaluator.run(program, target)(prepare(decl))(
+          logPW = logPW,
+          detailPW = detailPW,
+          timeLimit = None,
+          simplifyLevel = 2,
+        )
+      }.map((_, decl)).toOption.get
+    }
+    lst.toList
+  }
+
+  private def prepare(esFuncDecl: ESHelper.ESFuncAst)(
+    renamer: Renamer,
+    pst: PState,
+  ): (Renamer, PState) = {
+    val addr_func_obj_record = renamer.newAddr
+
+    /* NOTE: globals are not modified, so we can use the same globals for all overloads
+  val init = new Initialize(cfg)
+  val globals = for {
+    (x, v) <- init.initGlobal
+    pv = v match
+      case _: Addr => Unknown
+      case _       => Known(v)
+  } yield x -> pv */
+
+    pst.allocRecord(
+      addr_func_obj_record,
+      esFuncDecl.toRecordTname,
+      esFuncDecl.toRecordEntries,
+    )
+
+    pst.define(
+      renamer.get(Name("F"), pst.context),
+      Known(addr_func_obj_record),
+    )
+    pst.define(
+      renamer.get(Name("argumentsList"), pst.context),
+      Unknown,
+    );
+
+    (renamer, pst)
+  }
+
+  private lazy val ORDINARY_CALL_EVAL_BODY = "OrdinaryCallEvaluateBody"
+
+  /* given contexts to map asts */
+  // TODO check if is it okay to compare Ast by value (not okay in general, what about functions?)
 
   given [T: Ordering]: Ordering[Option[T]] with
     def compare(x: Option[T], y: Option[T]): Int =

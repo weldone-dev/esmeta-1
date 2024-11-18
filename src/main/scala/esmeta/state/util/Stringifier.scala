@@ -4,6 +4,7 @@ import esmeta.cfg.*
 import esmeta.state.{*, given}
 import esmeta.ir.{Func => IRFunc, *, given}
 import esmeta.es.*
+import esmeta.util.{Flat, Zero, One, Many}
 import esmeta.util.BaseUtils.*
 import esmeta.util.Appender.{given, *}
 
@@ -58,8 +59,11 @@ class Stringifier(detail: Boolean, location: Boolean) {
     app.wrap {
       // TODO app :> "globals: " >> pst.globals
       app :> "context.func.name: " >> pst.context.func.name
-      given Rule[Option[Predict[Value]]] =
-        optionRule("/* no return value (None) */")
+      given Rule[Flat[Value]] = (app, flat) =>
+        flat match
+          case Zero      => app >> "/* no return value (Zero) */"
+          case One(elem) => app >> elem
+          case Many      => app >> "/* too many return value (Many)"
       app :> "context.ret: " >> pst.context.ret
       app :> "locals: " >> pst.locals
       app :> "heap: " >> pst.heap

@@ -149,9 +149,7 @@ case class PState(
       self.func,
       self.context.sensitivity, // ???
       newLocals,
-      (self.context.ret, other.context.ret) match
-        case (None, None) => None
-        case (_, _)       => Some(Unknown),
+      self.context.ret || other.context.ret,
     )
     PState(globals, callStack, newCtx, newHeap)
   }

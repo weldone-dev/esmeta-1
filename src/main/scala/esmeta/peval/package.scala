@@ -3,6 +3,7 @@ package esmeta.peval
 import esmeta.error.{NonLiteral, PartialEvaluatorError}
 import esmeta.ir.*
 import esmeta.state.*
+import esmeta.util.{Flat, Zero, One, Many}
 import scala.util.{Try}
 
 type PValue = Predict[Value]
@@ -12,9 +13,31 @@ extension (pv: PValue) {
   def isKnownLiteral: Boolean = pv match
     case Known(v) => v.isLiteralValue
     case _        => false
+
+  def toFlat: Flat[Value] = pv match
+    case Known(v) => One(v)
+    case _        => Many
+}
+
+extension [T](ft: Flat[T]) {
+  def getOrElse(default: => T): T = ft match
+    case Zero      => default
+    case One(elem) => elem
+    case Many      => default
+
+  def toPredict(zero: => Predict[T]): Predict[T] = ft match
+    case Zero      => zero
+    case One(elem) => Known(elem)
+    case Many      => Unknown
+}
+
+extension (rf: RefTarget) {
+  inline def known: PRefTarget = Known(rf)
 }
 
 extension (v: Value) {
+
+  inline def known: PValue = Known(v)
 
   def toExpr: Expr = v match
     case Math(decimal)  => EMath(decimal)
@@ -39,9 +62,9 @@ extension (v: Value) {
 }
 
 extension (sc: StringContext) {
-  def throwPeval(args: Any*): Nothing = throw new PartialEvaluatorError(
+  inline def throwPeval(args: Any*): Nothing = throw new PartialEvaluatorError(
     sc.s(args),
   )
 }
 
-lazy val ORDINARY_CALL_EVAL_BODY = "OrdinaryCallEvaluateBody"
+lazy val ES_PE_TARGET = ESPartialEvaluator.TARGET

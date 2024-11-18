@@ -29,16 +29,16 @@ case object IRPEval extends Phase[Program, Program] {
   def run(config: Config, prog: Program): Program =
     if (!config.use) then prog
     else
+      val logger = Some(getPrintWriter(s"$IRPEVAL_LOG_DIR/log"))
       Program(
         prog.funcs.map {
           case f if !f.params.isEmpty => f
           case f => {
             val newFunc =
               PartialEvaluator.run(prog, f) { (_renamer, _pst) => }(
-                log = config.log,
-                detail = false, // TODO add to Config
+                logPW = logger,
+                detailPW = None, // TODO add to Config
                 simplifyLevel = config.simplify,
-                logPW = Some(getPrintWriter(s"$IRPEVAL_LOG_DIR/log")),
                 timeLimit = None,
               )
             if (config.log) then

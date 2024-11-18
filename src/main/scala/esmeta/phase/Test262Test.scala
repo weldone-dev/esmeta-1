@@ -10,14 +10,17 @@ import esmeta.util.BaseUtils.*
 import esmeta.util.{ConcurrentPolicy => CP}
 import esmeta.util.SystemUtils.*
 import esmeta.es.*
-import esmeta.es.util.Coverage
+import esmeta.es.util.{Coverage, mergeStmt}
 import esmeta.test262.{*, given}
 import esmeta.test262.util.TestFilter
 import java.io.File
 import java.util.concurrent.TimeoutException
 
 // TODO sort imports
+import esmeta.peval.ES_PE_TARGET
+import esmeta.peval.util.AstHelper
 import esmeta.peval.util.Test262PEvalPolicy
+import esmeta.peval.ESPartialEvaluator
 
 /** `test262-test` phase */
 case object Test262Test extends Phase[CFG, Summary] {
@@ -29,9 +32,9 @@ case object Test262Test extends Phase[CFG, Summary] {
     config: Config,
   ): Summary =
 
-    val pevalConfig = config.peval.getOrElse(Test262PEvalPolicy.DEFAULT);
+    val peval = config.peval.getOrElse(Test262PEvalPolicy.DEFAULT);
 
-    if (config.coverage && !(pevalConfig.isNever)) then
+    if (config.coverage && !(peval.isNever)) then
       throw OptConflictError("-test262-test:coverage", "-test262-test:peval")
 
     // set test mode
@@ -39,7 +42,24 @@ case object Test262Test extends Phase[CFG, Summary] {
 
     // get target version of Test262
     val version = Test262.getVersion(config.target)
-    val test262 = Test262(version, cfg, config.withYet)
+
+    val targetCfg =
+      if (peval.harness.shouldCompute) then
+        val allHarnesses = Test262.getAllHarnesses(cfg.scriptParser)
+        val newCfgWithHarness = ESPartialEvaluator.pevalThenConstructCFG(
+          cfg,
+          AstHelper
+            .getPEvalTargetAsts(mergeStmt(allHarnesses))
+            .zipWithIndex
+            .map {
+              case (decl, idx) =>
+                (decl, Some(s"${ES_PE_TARGET}PEvaled${idx}"))
+            },
+        )(verbose = true)
+        if (peval.harness.shouldUse) then newCfgWithHarness else cfg
+      else cfg
+
+    val test262 = Test262(version, targetCfg, config.withYet)
     val targets =
       if (cmdConfig.targets.isEmpty) None
       else Some(cmdConfig.targets)
@@ -62,7 +82,7 @@ case object Test262Test extends Phase[CFG, Summary] {
       config.timeLimit,
       config.concurrent,
       false,
-      pevalConfig,
+      peval,
     )
 
     // if summary has failed test case, throws an exception
