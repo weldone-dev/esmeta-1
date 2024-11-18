@@ -15,7 +15,9 @@ case class Intrinsics(cfg: CFG) {
   given CFG = cfg
 
   // XXX remove after update to ES2025
-  lazy val isES2024 = cfg.spec.version.exists(_.tag.exists(_ == "es2024"))
+  lazy val isES2024 = cfg.spec.version.exists(
+    _.hash == "0b24a049c11fe0604b1c929772e7cbd671b78492",
+  )
   def getGeneratorPrototypeName(async: String, postfix: String): String =
     if (isES2024) s"${async}GeneratorFunction.prototype.prototype$postfix"
     else s"${async}GeneratorPrototype$postfix"
