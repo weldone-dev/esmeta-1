@@ -46,6 +46,7 @@ case object MinifyFuzz extends Phase[CFG, Coverage] {
       proCrit = config.proCrit,
       demCrit = config.demCrit,
       fsMinTouch = config.fsMinTouch,
+      keepBugs = config.keepBugs,
     )
 
     for (dirname <- config.out) cov.dumpToWithDetail(dirname)
@@ -127,6 +128,11 @@ case object MinifyFuzz extends Phase[CFG, Coverage] {
       NumOption((c, k) => c.fsMinTouch = k),
       "set the minimum touch for feature sensitivity (default: 10).",
     ),
+    (
+      "keep-bugs",
+      BoolOption(c => c.keepBugs = true),
+      "keep the bugs in the generated programs (default: false).",
+    ),
   )
   case class Config(
     var log: Boolean = false,
@@ -143,5 +149,6 @@ case object MinifyFuzz extends Phase[CFG, Coverage] {
     var proCrit: Int = 2,
     var demCrit: Int = 2,
     var fsMinTouch: Int = 10,
+    var keepBugs: Boolean = false,
   )
 }

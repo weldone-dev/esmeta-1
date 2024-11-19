@@ -14,6 +14,7 @@ import esmeta.util.SystemUtils.*
 import esmeta.es.util.fuzzer.{MinifyChecker, FSTrieWrapper}
 import esmeta.js.minifier.Minifier
 import io.circe.*, io.circe.syntax.*
+import scala.collection.mutable.{Map => MMap}
 
 import scala.math.Ordering.Implicits.seqOrdering
 import esmeta.es.util.fuzzer.FSTrieConfig
@@ -98,7 +99,7 @@ case class Coverage(
     script: Script,
   ): (State, Boolean, Boolean, Set[Script], Set[NodeView], Set[CondView]) = {
     val interp = run(script.code)
-    this.synchronized(checkWithBlocking(script, interp))
+    this.synchronized(checkWithBlockings(script, interp))
   }
 
   /** evaluate a given ECMAScript program */
@@ -116,7 +117,7 @@ case class Coverage(
   }
 
   def check(script: Script, interp: Interp): (State, Boolean, Boolean) =
-    val Script(code, _) = script
+    val Script(code, _, _) = script
     val initSt = cfg.init.from(code)
     val finalSt = interp.result
 
@@ -194,11 +195,103 @@ case class Coverage(
     // TODO: impl checkWithBlocking using `blockingScripts`
     (finalSt, updated, covered)
 
-  def checkWithBlocking(
+  // check with both blocking and kicked scripts
+  def checkWithDetails(
+    script: Script,
+    interp: Interp,
+  ): (
+    State,
+    Boolean,
+    Boolean,
+    MMap[Script, Set[NodeOrCondView]],
+    MMap[Script, Set[NodeOrCondView]],
+  ) =
+    val Script(code, _, _) = script
+    val initSt = cfg.init.from(code)
+    val finalSt = interp.result
+
+    var covered = false
+    var updated = false
+    var blockingScripts: MMap[Script, Set[NodeOrCondView]] =
+      MMap.empty.withDefaultValue(Set.empty)
+    var kickedScripts: MMap[Script, Set[NodeOrCondView]] =
+      MMap.empty.withDefaultValue(Set.empty)
+
+    var touchedNodeViews: Map[NodeView, Option[Nearest]] = Map()
+    var touchedCondViews: Map[CondView, Option[Nearest]] = Map()
+
+    val strictCode = USE_STRICT + code
+
+    val isMinifierHit =
+      swcMinifyChecker.check(strictCode).map(_.diff).getOrElse(false)
+
+    val rawStacks =
+      interp.touchedNodeViews.keys
+        .flatMap(_.view)
+        .map(v => (v._2 :: v._1).map(_.func.name))
+
+    if (isMinifierHit) then fsTrie.touchWithHit(rawStacks)
+    else fsTrie.touchWithMiss(rawStacks)
+
+    // update node coverage
+    for ((rawNodeView, nearest) <- interp.touchedNodeViews)
+      // cut out features TODO: do this in the interpreter (Kanguk Lee)
+      val NodeView(node, rawView) = rawNodeView
+      val view: View = rawView.flatMap {
+        case (rawEnclosing, feature, path) =>
+          val rawStack = feature :: rawEnclosing
+          val featureStack = rawStack.take(fsTrie((rawStack).map(_.func.name)))
+          if featureStack.isEmpty then None
+          else Some((featureStack.tail, featureStack.head, path))
+      }
+      val nodeView = NodeView(node, view)
+      touchedNodeViews += nodeView -> nearest
+      getScript(nodeView) match
+        case None => update(nodeView, script); updated = true; covered = true
+        case Some(originalScript) if originalScript.code.length > code.length =>
+          update(nodeView, script)
+          updated = true
+          kickedScripts(originalScript) += nodeView
+        case Some(blockScript) => blockingScripts(blockScript) += nodeView
+
+    // update branch coverage
+    for ((rawCondView, nearest) <- interp.touchedCondViews)
+      // cut out features TODO: do this in the interpreter (Kanguk Lee)
+      val CondView(cond, rawView) = rawCondView
+      val view: View = rawView.flatMap {
+        case (rawEnclosing, feature, path) =>
+          val rawStack = feature :: rawEnclosing
+          val featureStack = rawStack.take(fsTrie((rawStack).map(_.func.name)))
+          if featureStack.isEmpty then None
+          else Some((featureStack.tail, featureStack.head, path))
+      }
+      val condView: CondView = CondView(cond, view)
+      touchedCondViews += condView -> nearest
+      getScript(condView) match
+        case None =>
+          update(condView, nearest, script); updated = true; covered = true
+        case Some(origScript) if origScript.code.length > code.length =>
+          update(condView, nearest, script)
+          updated = true
+          kickedScripts(origScript) += condView
+        case Some(blockScript) => blockingScripts(blockScript) += condView
+
+    if (updated)
+      _minimalInfo += script.name -> ScriptInfo(
+        ConformTest.createTest(cfg, finalSt),
+        touchedNodeViews.keys,
+        touchedCondViews.keys,
+        minifiable = Some(isMinifierHit),
+      )
+
+    // TODO: impl checkWithBlocking using `blockingScripts`
+    (finalSt, updated, covered, blockingScripts, kickedScripts)
+
+  def checkWithBlockings(
     script: Script,
     interp: Interp,
   ): (State, Boolean, Boolean, Set[Script], Set[NodeView], Set[CondView]) =
-    val Script(code, _) = script
+    val Script(code, _, _) = script
     val initSt = cfg.init.from(code)
     val finalSt = interp.result
 

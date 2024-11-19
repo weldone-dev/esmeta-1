@@ -59,6 +59,12 @@ class JsonProtocol(cfg: CFG) extends StateJsonProtocol(cfg) {
   given funcViewDecoder: Decoder[FuncView] = deriveDecoder
   given funcViewEncoder: Encoder[FuncView] = deriveEncoder
 
+  given nodeOrCondViewEncoder: Encoder[NodeOrCondView] =
+    Encoder.instance {
+      case nv: NodeView => nodeViewEncoder(nv)
+      case cv: CondView => condViewEncoder(cv)
+    }
+
   // meta-info for each view or features
   given nodeViewInfoDecoder: Decoder[NodeViewInfo] = deriveDecoder
   given nodeViewInfoEncoder: Encoder[NodeViewInfo] = deriveEncoder

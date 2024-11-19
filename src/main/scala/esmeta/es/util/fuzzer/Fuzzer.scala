@@ -349,7 +349,7 @@ class Fuzzer(
     addRow(row, tsv)
 
   // logging
-  private def logging: Unit =
+  def logging: Unit =
     val n = cov.nodeCov
     val b = cov.branchCov
     val e = elapsed

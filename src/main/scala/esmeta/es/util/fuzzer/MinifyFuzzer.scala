@@ -3,7 +3,9 @@ package esmeta.es.util.fuzzer
 import esmeta.util.*
 import esmeta.cfg.CFG
 import esmeta.{error => _, *}
+import esmeta.es.util.JsonProtocol
 import esmeta.es.util.Coverage
+import esmeta.es.util.Coverage.NodeOrCondView
 import esmeta.es.util.fuzzer.Fuzzer.NO_DEBUG
 import esmeta.injector.*
 import esmeta.state.State
@@ -16,6 +18,7 @@ import esmeta.es.util.delta.DeltaDebugger
 import scala.util.*
 import scala.collection.parallel.CollectionConverters._
 import scala.collection.mutable.{Map => MMap, Set => MSet}
+import io.circe.*, io.circe.syntax.*, io.circe.generic.semiauto.*
 
 import io.circe.Json
 import java.util.concurrent.atomic.AtomicInteger
@@ -36,6 +39,7 @@ object MinifyFuzzer {
     proCrit: Int,
     demCrit: Int,
     fsMinTouch: Int,
+    keepBugs: Boolean = false,
   ): Coverage = new MinifyFuzzer(
     cfg,
     logInterval,
@@ -50,6 +54,7 @@ object MinifyFuzzer {
     proCrit,
     demCrit,
     fsMinTouch,
+    keepBugs,
   ).result
 
   val logDir: String = s"$MINIFY_FUZZ_LOG_DIR/fuzz-$dateStr"
@@ -70,6 +75,7 @@ class MinifyFuzzer(
   proCrit: Int,
   demCrit: Int,
   fsMinTouch: Int = 10,
+  keepBugs: Boolean = false,
 ) {
   import MinifyFuzzer.*
 
@@ -90,6 +96,13 @@ class MinifyFuzzer(
   lazy val result: Coverage = fuzzer.result
 
   lazy val db: MinifierDB = MinifierDB.fromResource
+
+  // ScriptA -> ScriptB -> View: ScriptA is blocked by ScriptB on View even though ScriptA is a bug
+  val bugBlockingMap: MMap[String, Map[String, Set[NodeOrCondView]]] =
+    MMap.empty.withDefaultValue(Map.empty)
+  // ScriptA -> ScriptB -> View: ScriptA is kicked by ScriptB on View even though ScriptA is a bug
+  val bugKickedMap: MMap[String, Map[String, Set[NodeOrCondView]]] =
+    MMap.empty.withDefaultValue(Map.empty)
 
   val filteredAOs: List[String] = List(
     "INTRINSICS.Function.prototype.toString",
@@ -134,10 +147,27 @@ class MinifyFuzzer(
         visited += code
         if (info.invalid)
           fail("INVALID PROGRAM")
-        val script = toScript(code)
+        val tempScript = toScript(code)
         val interp = info.interp.getOrElse(fail("Interp Fail"))
         val finalState = interp.result
-        val (_, updated, covered) = cov.check(script, interp)
+        val script = tempScript.copy(
+          isBug = minifyTestOnline(finalState, code),
+        )
+        val (_, updated, covered, blockings, kicked) = cov.checkWithDetails(
+          script,
+          interp,
+        )
+        if (keepBugs)
+          if (script.isBug)
+            blockings.foreach {
+              case (blockingScript, views) =>
+                bugBlockingMap(code) += (blockingScript.code -> views)
+            }
+          kicked.foreach {
+            case (kickedScript, views) =>
+              if (kickedScript.isBug)
+                bugKickedMap(kickedScript.code) += (code -> views)
+          }
         val filtered = interp.coveredAOs intersect filteredAOs
         if (filtered.isEmpty)
           minifyTest(iter, finalState, code, covered)
@@ -146,6 +176,21 @@ class MinifyFuzzer(
         covered
       },
     )
+
+    override def logging: Unit =
+      val jsonProtocol: JsonProtocol = JsonProtocol(cfg)
+      import jsonProtocol.given
+      super.logging
+      if (keepBugs) {
+        dumpJson(
+          bugBlockingMap,
+          s"$logDir/bug_blocking_map.json",
+        )
+        dumpJson(
+          bugKickedMap,
+          s"$logDir/bug_kicked_map.json",
+        )
+      }
   }
 
   private def buildTestProgram(code: String, ret: ReturnAssertion): String =
@@ -154,6 +199,30 @@ class MinifyFuzzer(
     val tracerHeader =
       s"const arr = []; const $TRACER_SYMBOL = x => (arr.push(x), x)\n"
     USE_STRICT ++ tracerHeader ++ iife
+
+  // True if the program is not a bug, False otherwise
+  private def minifyTestOnline(
+    finalState: State,
+    code: String,
+  ): Boolean =
+    val injector = ReturnInjector(cfg, finalState, timeLimit, false)
+    injector.exitTag match
+      case NormalTag =>
+        val returns = injector.assertions
+        val codes =
+          code +: tracerExprMutator(code, 5, None).map(
+            _._2.toString(grammar = Some(cfg.grammar)),
+          )
+        (for {
+          ret <- returns.par
+          code <- codes.par
+        } yield {
+          val original = buildTestProgram(code, ret)
+          (minifyTester.test(original) match
+            case None | Some(_: AssertionSuccess) => true
+            case Some(failure)                    => false
+          )
+        }).fold(true)(_ && _)
 
   private def minifyTest(
     // TODO(@hyp3rflow): we should consider about same iter number among different programs due to return injector
@@ -197,50 +266,54 @@ class MinifyFuzzer(
 
       case _ =>
 
-  private def log(result: MinifyFuzzResult) = deltaIndex.synchronized {
-    val MinifyFuzzResult(iter, covered, original, test) = result
-    val delta = test.original
-    val minified = test.minified
-    val injected = test.injected
-    // if it is new, we have to log
-    if (!pass.contains(delta)) {
-      val count = bugIndexCounter.incrementAndGet()
-      deltaIndex += (original -> count)
-      val dirpath = s"$logDir/$count"
-      mkdir(dirpath)
-      dumpFile(minified, s"$dirpath/minified.js")
-      dumpFile(injected, s"$dirpath/injected.js")
-      dumpFile(delta, s"$dirpath/delta.js")
-      test.getReason.map(dumpFile(_, s"$dirpath/reason"))
-      dumpJson(
-        Json.obj(
-          "iter" -> Json.fromInt(iter),
-          "covered" -> Json.fromBoolean(covered),
-        ),
-        s"$dirpath/info",
-      )
-      // TODO(@hyp3rflow): extends Fuzzer and dumps DB periodically.
-      // dumpJson(db.asJson, s"$dirpath/db.json")
+  private def log(result: MinifyFuzzResult) =
+    deltaIndex.synchronized {
+      val MinifyFuzzResult(iter, covered, original, test) = result
+      val delta = test.original
+      val minified = test.minified
+      val injected = test.injected
+      // if it is new, we have to log
+      // println(s"test.original: $delta")
+      // println(s"original: $original")
+      if (!pass.contains(delta)) {
+        val count = bugIndexCounter.incrementAndGet()
+        // println(s"New bug: $count")
+        deltaIndex += (delta -> count)
+        val dirpath = s"$logDir/$count"
+        mkdir(dirpath)
+        dumpFile(minified, s"$dirpath/minified.js")
+        dumpFile(injected, s"$dirpath/injected.js")
+        dumpFile(delta, s"$dirpath/delta.js")
+        test.getReason.map(dumpFile(_, s"$dirpath/reason"))
+        dumpJson(
+          Json.obj(
+            "iter" -> Json.fromInt(iter),
+            "covered" -> Json.fromBoolean(covered),
+          ),
+          s"$dirpath/info",
+        )
+        // TODO(@hyp3rflow): extends Fuzzer and dumps DB periodically.
+        // dumpJson(db.asJson, s"$dirpath/db.json")
+      }
+      deltaIndex.get(delta) match
+        // if it is found in this execution, dump original to bug index directory.
+        case Some(index) =>
+          // println(s"Found bug: $index")
+          val dirpath = s"$logDir/$index/bugs"
+          mkdir(dirpath)
+          dumpFile(original, s"$dirpath/$iter.js")
+          deltaProvenances.getOrElseUpdate(delta, MSet.empty).add(original)
+        // if it is already known bug, dump original to label directory.
+        case None if db.getLabel(delta).isDefined =>
+          // println(s"Known bug: $delta")
+          val label = db.getLabel(delta).get
+          val dirpath = s"$logDir/labels/$label"
+          mkdir(dirpath)
+          dumpFile(original, s"$dirpath/$iter.js")
+          test.getReason.map(dumpFile(_, s"$dirpath/$iter.reason.txt"))
+        // unreachable path
+        case _ => ???
     }
-    deltaIndex.get(delta) match
-      // if it is found in this execution, dump original to bug index directory.
-      case Some(index) =>
-        val dirpath = s"$logDir/$index/bugs"
-        mkdir(dirpath)
-        dumpFile(original, s"$dirpath/$iter.js")
-        deltaProvenances.getOrElseUpdate(delta, MSet.empty).add(original)
-      // if it is already known bug, dump original to label directory.
-      case None if db.getLabel(delta).isDefined =>
-        val label = db.getLabel(delta).get
-        val dirpath = s"$logDir/labels/$label"
-        mkdir(dirpath)
-        dumpFile(original, s"$dirpath/$iter.js")
-        test.getReason.map(dumpFile(_, s"$dirpath/$iter.reason.txt"))
-      // unreachable path
-      case _ => ???
-
-  }
-
 }
 
 case class MinifyFuzzResult(
