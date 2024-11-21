@@ -13,7 +13,7 @@ import esmeta.util.*
 import esmeta.util.SystemUtils.*
 import esmeta.es.util.fuzzer.{MinifyChecker, FSTrieWrapper}
 import esmeta.js.minifier.Minifier
-import io.circe.*, io.circe.syntax.*
+import io.circe.*, io.circe.syntax.*, io.circe.generic.semiauto.*
 import scala.collection.mutable.{Map => MMap}
 
 import scala.math.Ordering.Implicits.seqOrdering
@@ -732,11 +732,13 @@ object Coverage {
   def fromLogSimpl(baseDir: String, cfg: CFG): Coverage =
     val jsonProtocol = JsonProtocol(cfg)
     import jsonProtocol.given
+    given fsTrieConfigDecoder: Decoder[FSTrieConfig] = deriveDecoder
 
     def readJsonHere[T](json: String)(using Decoder[T]) =
       readJson[T](s"$baseDir/$json")
 
     val con: CoverageConstructor = readJsonHere("constructor.json")
+    val fsTrieConfig = readJsonHere[FSTrieConfig]("fstrie-config.json")
     val cov = new Coverage(
       cfg,
       con.kFs,

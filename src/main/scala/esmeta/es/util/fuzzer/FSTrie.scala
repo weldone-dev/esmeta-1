@@ -57,9 +57,14 @@ class FSTrieWrapper(
 ) {
   var root: FSTrie = FSTrie(status = FSTrieStatus.Noticed)
 
-  val scoringFunction: (Long, Long) => Double = (hits, misses) => {
-    val absentHits = rootHits - hits
-    val absentMisses = rootMisses - misses
+  private def scoringFunction(
+    hits: Long,
+    misses: Long,
+    pHits: Long,
+    pMisses: Long,
+  ): Double = {
+    val absentHits = pHits - hits
+    val absentMisses = pMisses - misses
     val score = chiSquaredTest(hits, misses, absentHits, absentMisses)
     assert(
       score >= 0,
@@ -125,6 +130,8 @@ class FSTrieWrapper(
 
   def stacks: Set[List[String]] = root.stacks
 
+  def stacksWithScores: Map[List[String], Double] = root.stacksWithScores
+
   /** A trie that stores the status of each node in the trie, and calculates the
     * score of each node based on the hits and misses of the node and its
     * children. The score is used to determine the promotion or demotion of a
@@ -148,6 +155,8 @@ class FSTrieWrapper(
     private var status: FSTrieStatus,
     var hits: Long = 0,
     var misses: Long = 0,
+    var parentHits: Long = 0,
+    var parentMisses: Long = 0,
     private var dirty: Boolean = false,
     private var promotables: Int = 0,
     private var avgScore: Double = 0,
@@ -203,39 +212,57 @@ class FSTrieWrapper(
     /** Write back the scores and number of promotables of each node if it's
       * dirty
       */
-    private[FSTrieWrapper] def writeback(): Unit = foreachFromLeaf { node =>
-      // write back the if it's dirty
-      if node.dirty then
-        node.dirty = false
-        node.status match {
-          case Promotable => // calculate the score based on hits and misses
-            node.avgScore = scoringFunction(node.hits, node.misses)
-            node.avgScoreSq = node.avgScore * node.avgScore
-            node.promotables = 1
-          case Noticed => // calculate the average score and number of the node's promotables
-            node.promotables = node.children.valuesIterator
-              .map(child => child.promotables)
-              .sum
-            node.avgScore =
-              if node.promotables == 0 then
-                scoringFunction(node.hits, node.misses)
-              else
-                node.children.valuesIterator
-                  .map(child => child.avgScore * child.promotables)
-                  .sum / node.promotables
-            node.avgScoreSq =
-              if node.promotables == 0 then node.avgScore * node.avgScore
-              else
-                node.children.valuesIterator
-                  .map(child => child.avgScoreSq * child.promotables)
-                  .sum / node.promotables
-          case Ignored => ()
+    private[FSTrieWrapper] def writeback(): Unit =
+      foreachFromRoot { node =>
+        // update parentHits and parentMisses
+        for (child <- node.children.valuesIterator) {
+          child.parentHits = node.hits
+          child.parentMisses = node.misses
         }
-        assert(
-          node.avgScore >= 0,
-          f"Score is negative: ${node.avgScore}, node: $node",
-        )
-    }
+      }
+      foreachFromLeaf { node =>
+        // write back the if it's dirty
+        if node.dirty then
+          node.dirty = false
+          node.status match {
+            case Promotable => // calculate the score based on hits and misses
+              node.avgScore = scoringFunction(
+                hits = node.hits,
+                misses = node.misses,
+                pHits = node.parentHits,
+                pMisses = node.parentMisses,
+              )
+              node.avgScoreSq = node.avgScore * node.avgScore
+              node.promotables = 1
+            case Noticed => // calculate the average score and number of the node's promotables
+              node.promotables = node.children.valuesIterator
+                .map(child => child.promotables)
+                .sum
+              node.avgScore =
+                if node.promotables == 0 then
+                  scoringFunction(
+                    hits = node.hits,
+                    misses = node.misses,
+                    pHits = node.parentHits,
+                    pMisses = node.parentMisses,
+                  )
+                else
+                  node.children.valuesIterator
+                    .map(child => child.avgScore * child.promotables)
+                    .sum / node.promotables
+              node.avgScoreSq =
+                if node.promotables == 0 then node.avgScore * node.avgScore
+                else
+                  node.children.valuesIterator
+                    .map(child => child.avgScoreSq * child.promotables)
+                    .sum / node.promotables
+            case Ignored => ()
+          }
+          assert(
+            node.avgScore >= 0,
+            f"Score is negative: ${node.avgScore}, node: $node",
+          )
+      }
 
     /** Promote or demote each node in the trie based on the score of this node.
       * Assume that the children have already been written back.
@@ -346,6 +373,21 @@ class FSTrieWrapper(
           case (k, v) =>
             v.stacksSuppl(currStack :+ k, acc)
         }.toSet + currStack
+
+    def stacksWithScores: Map[List[String], Double] =
+      stacksWithScoresSuppl(Nil, Map.empty)
+
+    def stacksWithScoresSuppl(
+      currStack: List[String],
+      acc: Map[List[String], Double],
+    ): Map[List[String], Double] =
+      if children.isEmpty then acc + (currStack -> avgScore)
+      else if (status == Promotable) || (status == Ignored) then acc
+      else
+        children.flatMap {
+          case (k, v) =>
+            v.stacksWithScoresSuppl(currStack :+ k, acc)
+        }.toMap + (currStack -> avgScore)
   }
 }
 

@@ -19,9 +19,15 @@ case object FSTrieStats extends Phase[Unit, Unit] {
     val baseDir = getFirstFilename(cmdConfig, "trie-statistics")
     val trie = FSTrieWrapper.fromDir(baseDir)
     val stacks = trie.stacks
-    val stats = stacks.groupBy(_.size)
+    val stacksWithScores = trie.stacksWithScores
+    val stats = stacksWithScores.toList.sortBy(_._2).groupBy(_._1.size)
+    for (size <- stats.keys.toList.sorted) {
+      val stacks = stats(size)
+      println(f"Number of stacks with size $size: ${stacks.size}")
+    }
     if config.out.isEmpty then println(stats.asJson)
     else dumpJson(stats, config.out.get)
+    ()
 
   val defaultConfig: Config = Config()
 
