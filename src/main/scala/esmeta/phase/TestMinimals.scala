@@ -35,9 +35,6 @@ case object TestMinimals extends Phase[CFG, Unit] {
 
     val baseDir = getFirstFilename(cmdConfig, "test-minimals")
 
-    var totalCount = 0
-    var bugCount = 0
-
     val tracerExprMutator = TracerExprMutator(using cfg)
     val minifyTester = MinifyTester(
       cfg,
@@ -48,45 +45,24 @@ case object TestMinimals extends Phase[CFG, Unit] {
     )
     val tracerInjector = TracerInjector(using cfg)
 
-    for {
-      minimal <- listFiles(s"$baseDir/minimal").par
-      name = minimal.getName
-      if jsFilter(name)
-      code = readFile(minimal.getPath).drop(USE_STRICT.length).strip
-      script = Script(code, name)
-    } {
-      val state =
-        Interpreter(
-          cfg.init.from(script),
-          log = false,
-          detail = false,
-          timeLimit = config.evalTimeLimit,
-        )
-      val injector = ReturnInjector(cfg, state, config.injectTimeLimit, false)
-      val passed = injector.exitTag match
-        case NormalTag =>
-          val returns = injector.assertions
-          val codes = code +: tracerExprMutator(code, 5, None).map(
-            _._2.toString(grammar = Some(cfg.grammar)),
-          )
-          (for {
-            ret <- returns.par
-            code <- codes.par
-          } yield {
-            val instrumentedCode = tracerInjector(code)
-            val iife = s"const k = (function () {\n$code\n$ret\n})();\n"
-            val tracerHeader =
-              s"const arr = []; const $TRACER_SYMBOL = x => (arr.push(x), x)\n"
-            val original = USE_STRICT ++ tracerHeader ++ iife
-            (minifyTester.test(original) match
-              case None | Some(_: AssertionSuccess) => true
-              case Some(failure)                    => false
-            )
-          }).fold(true)(_ && _)
-        case _ => true
-      if !passed then bugCount += 1
-      totalCount += 1
+    val scriptList = listFiles(s"$baseDir/minimal").flatMap { minimal =>
+      val name = minimal.getName
+      if jsFilter(name) then
+        val code = readFile(minimal.getPath).drop(USE_STRICT.length).strip
+        Some(Script(code, name))
+      else None
     }
+    val totalCount = scriptList.size
+
+    val baseLogDir = s"$baseDir/minimal/logs"
+    mkdir(baseLogDir)
+
+    val minifyFuzzer =
+      new MinifyFuzzer(cfg, proCrit = 1, demCrit = 1, fsMinTouch = 1)
+    val bugCount = minifyFuzzer.testMinimal(
+      scriptList,
+      baseLogDir,
+    )
 
     println(s"Total: $totalCount, Bugs: $bugCount")
     println(s"Bug rate: ${bugCount.toDouble / totalCount * 100}%")

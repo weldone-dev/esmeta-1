@@ -161,7 +161,9 @@ class DeltaDebugger(
                         case Some(syn) =>
                           Some(
                             esParser("NewExpression", args)
-                              .from(syn.toString(grammar = Some(grammar)))
+                              .from(
+                                f"(${syn.toString(grammar = Some(grammar))})",
+                              )
                               .asInstanceOf[Syntactic],
                           )
                         case _ => None
