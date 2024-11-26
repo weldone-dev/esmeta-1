@@ -3,11 +3,13 @@ package esmeta.es.util.fuzzer
 import esmeta.util.*
 import esmeta.cfg.CFG
 import esmeta.{error => _, *}
+import esmeta.es.Script
 import esmeta.es.util.JsonProtocol
 import esmeta.es.util.Coverage
 import esmeta.es.util.Coverage.NodeOrCondView
 import esmeta.es.util.fuzzer.Fuzzer.NO_DEBUG
 import esmeta.injector.*
+import esmeta.interpreter.*
 import esmeta.state.State
 import esmeta.util.BaseUtils.*
 import esmeta.util.SystemUtils.*
@@ -74,7 +76,7 @@ class MinifyFuzzer(
   cp: Boolean = false,
   proCrit: Int,
   demCrit: Int,
-  fsMinTouch: Int = 10,
+  fsMinTouch: Int,
   keepBugs: Boolean = false,
 ) {
   import MinifyFuzzer.*
@@ -192,6 +194,60 @@ class MinifyFuzzer(
         )
       }
   }
+
+  def testMinimal(minimals: List[Script], baseLogDir: String): Int =
+    var bugCount = 0
+    for {
+      minimal <- minimals.par
+      code = minimal.code
+      name = minimal.name
+    } {
+      val state =
+        Interpreter(
+          cfg.init.from(minimal),
+          log = false,
+          detail = false,
+          timeLimit = timeLimit,
+        )
+      val injector = ReturnInjector(cfg, state, timeLimit, false)
+      val passed = injector.exitTag match
+        case NormalTag =>
+          val returns = injector.assertions
+          val codes = code +: tracerExprMutator(code, 5, None).map(
+            _._2.toString(grammar = Some(cfg.grammar)),
+          )
+          (for {
+            ret <- returns.par
+            code <- codes.par
+          } yield {
+            val original = buildTestProgram(code, ret)
+            minifyTester.test(original) match
+              case None | Some(_: AssertionSuccess) => true
+              case Some(failure) =>
+                val delta =
+                  DeltaDebugger(
+                    cfg,
+                    code =>
+                      minifyTester
+                        .test(buildTestProgram(code, ret))
+                        .fold(false)(_.tag == failure.tag),
+                  ).result(code)
+                // re-run tester with dd output
+                minifyTester.test(buildTestProgram(delta, ret)) match
+                  case None | Some(_: AssertionSuccess) => true
+                  case Some(result) =>
+                    log(
+                      MinifyFuzzResult(-1, false, original, result),
+                      baseLogDir,
+                    )
+                    false
+          }).fold(true)(_ && _)
+        case _ => false
+      if (!passed) {
+        bugCount += 1
+      }
+    }
+    bugCount
 
   private def buildTestProgram(code: String, ret: ReturnAssertion): String =
     val instrumentedCode = tracerInjector(code)

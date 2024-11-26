@@ -82,7 +82,7 @@ case object TestMinimals extends Phase[CFG, Unit] {
               case Some(failure)                    => false
             )
           }).fold(true)(_ && _)
-        case _ => false
+        case _ => true
       if !passed then bugCount += 1
       totalCount += 1
     }
