@@ -11,7 +11,7 @@ _esmeta_completions() {
   local cur prev opts lastc informats outformats datafiles
   cur="${COMP_WORDS[COMP_CWORD]}"
   prev="${COMP_WORDS[COMP_CWORD-1]}"
-  cmdList="help extract compile build-cfg tycheck parse eval web test262-test inject inject-tracer inject-minify mutate fuzz minify-fuzz delta-debug coverage-investigate minify-check fstrie-stats analyze"
+  cmdList="help extract compile build-cfg tycheck parse eval web test262-test inject inject-tracer inject-minify mutate fuzz minify-fuzz delta-debug coverage-investigate minify-check test-minimals fstrie-stats analyze"
   globalOpt="-silent -error -status -time -test262dir"
   helpOpt=""
   extractOpt="-extract:target -extract:log -extract:eval -extract:repl"
@@ -27,6 +27,7 @@ _esmeta_completions() {
   fuzzOpt="-fuzz:log -fuzz:log-interval -fuzz:out -fuzz:debug -fuzz:timeout -fuzz:trial -fuzz:duration -fuzz:seed -fuzz:cp -fuzz:k-fs -fuzz:init"
   coverageinvestigateOpt="-coverage-investigate:out"
   minifycheckOpt="-minify-check:out"
+  testminimalsOpt="-test-minimals:out -test-minimals:eval-time-limit -test-minimals:inject-time-limit -test-minimals:test-time-limit"
   fstriestatsOpt="-fstrie-stats:out"
   analyzeOpt="-analyze:repl"
   # completion for commands
@@ -111,6 +112,10 @@ _esmeta_completions() {
           ;;
         minify-check)
           COMPREPLY=($(compgen -W "${globalOpt} ${extractOpt} ${minifycheckOpt}"))
+          return 0
+          ;;
+        test-minimals)
+          COMPREPLY=($(compgen -W "${globalOpt} ${extractOpt} ${compileOpt} ${buildcfgOpt} ${testminimalsOpt}"))
           return 0
           ;;
         fstrie-stats)

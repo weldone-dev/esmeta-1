@@ -250,6 +250,14 @@ case object CmdMinifyCheck
   )
 }
 
+case object CmdTestMinimals
+  extends Command("test-minimals", CmdBuildCFG >> TestMinimals) {
+  val help = "test minimals"
+  val examples = List(
+    "esmeta test-minimals log-dir -test-minimals:out=out.json",
+  )
+}
+
 /** `fstrie-stats` command */
 case object CmdFSTrieStats
   extends Command("fstrie-stats", CmdBase >> FSTrieStats) {

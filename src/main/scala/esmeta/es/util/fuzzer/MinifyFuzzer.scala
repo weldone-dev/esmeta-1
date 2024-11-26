@@ -230,6 +230,7 @@ class MinifyFuzzer(
     finalState: State,
     code: String,
     covered: Boolean,
+    baseLogDir: String = logDir,
   ): Unit =
     val injector = ReturnInjector(cfg, finalState, timeLimit, false)
     injector.exitTag match
@@ -261,12 +262,15 @@ class MinifyFuzzer(
               minifyTester.test(buildTestProgram(delta, ret)) match
                 case None | Some(_: AssertionSuccess) =>
                 case Some(result) =>
-                  log(MinifyFuzzResult(iter, covered, original, result))
+                  log(
+                    MinifyFuzzResult(iter, covered, original, result),
+                    baseLogDir,
+                  )
         }
 
       case _ =>
 
-  private def log(result: MinifyFuzzResult) =
+  private def log(result: MinifyFuzzResult, baseLogDir: String) =
     deltaIndex.synchronized {
       val MinifyFuzzResult(iter, covered, original, test) = result
       val delta = test.original
@@ -279,7 +283,7 @@ class MinifyFuzzer(
         val count = bugIndexCounter.incrementAndGet()
         // println(s"New bug: $count")
         deltaIndex += (delta -> count)
-        val dirpath = s"$logDir/$count"
+        val dirpath = s"$baseLogDir/$count"
         mkdir(dirpath)
         dumpFile(minified, s"$dirpath/minified.js")
         dumpFile(injected, s"$dirpath/injected.js")
@@ -299,7 +303,7 @@ class MinifyFuzzer(
         // if it is found in this execution, dump original to bug index directory.
         case Some(index) =>
           // println(s"Found bug: $index")
-          val dirpath = s"$logDir/$index/bugs"
+          val dirpath = s"$baseLogDir/$index/bugs"
           mkdir(dirpath)
           dumpFile(original, s"$dirpath/$iter.js")
           deltaProvenances.getOrElseUpdate(delta, MSet.empty).add(original)
@@ -307,7 +311,7 @@ class MinifyFuzzer(
         case None if db.getLabel(delta).isDefined =>
           // println(s"Known bug: $delta")
           val label = db.getLabel(delta).get
-          val dirpath = s"$logDir/labels/$label"
+          val dirpath = s"$baseLogDir/labels/$label"
           mkdir(dirpath)
           dumpFile(original, s"$dirpath/$iter.js")
           test.getReason.map(dumpFile(_, s"$dirpath/$iter.reason.txt"))
