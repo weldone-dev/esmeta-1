@@ -51,6 +51,7 @@ case object TestMinimals extends Phase[CFG, Unit] {
     for {
       minimal <- listFiles(s"$baseDir/minimal").par
       name = minimal.getName
+      if jsFilter(name)
       code = readFile(minimal.getPath).drop(USE_STRICT.length).strip
       script = Script(code, name)
     } {
