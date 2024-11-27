@@ -197,11 +197,17 @@ class MinifyFuzzer(
 
   def testMinimal(minimals: List[Script], baseLogDir: String): Int =
     var bugCount = 0
-    for {
-      minimal <- minimals.par
-      code = minimal.code
-      name = minimal.name
-    } {
+    for (
+      minimal <- ProgressBar(
+        "reconstructing coverage",
+        minimals,
+        getName = (x, _) => x.name,
+        detail = false,
+        concurrent = ConcurrentPolicy.Auto,
+      )
+    ) {
+      val code = minimal.code
+      val name = minimal.name
       val state =
         Interpreter(
           cfg.init.from(minimal),
