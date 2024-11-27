@@ -256,8 +256,15 @@ class MinifyFuzzer(
     bugCount
 
   private def buildTestProgram(code: String, ret: ReturnAssertion): String =
-    val instrumentedCode = tracerInjector(code)
-    val iife = s"const k = (function () {\n$code\n$ret\n})();\n"
+    val instrumentedCode =
+      try {
+        tracerInjector(code)
+      } catch {
+        case e: Throwable =>
+          println(s"Failed to inject tracer: $e")
+          code
+      }
+    val iife = s"const k = (function () {\n$instrumentedCode\n$ret\n})();\n"
     val tracerHeader =
       s"const arr = []; const $TRACER_SYMBOL = x => (arr.push(x), x)\n"
     USE_STRICT ++ tracerHeader ++ iife
@@ -285,6 +292,7 @@ class MinifyFuzzer(
             case Some(failure)                    => false
           )
         }).fold(true)(_ && _)
+      case _ => true // not injected
 
   private def minifyTest(
     // TODO(@hyp3rflow): we should consider about same iter number among different programs due to return injector
