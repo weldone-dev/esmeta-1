@@ -48,7 +48,6 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
             coveredNode,
             coveredBranch,
           ) = covInvData
-          println(s"Checking $name")
           val strictCode = USE_STRICT + code
           val blockingsWithBug = blockings.filter { blocking =>
             swcMinifyChecker.check(strictCode).map(_.diff).getOrElse(false)
