@@ -304,8 +304,23 @@ case class Coverage(
     var touchedNodeViews: Map[NodeView, Option[Nearest]] = Map()
     var touchedCondViews: Map[CondView, Option[Nearest]] = Map()
 
+    val rawStacks =
+      interp.touchedNodeViews.keys
+        .flatMap(_.view)
+        .map(v => (v._2 :: v._1).map(_.func.name))
+
     // update node coverage
-    for ((nodeView, nearest) <- interp.touchedNodeViews)
+    for ((rawNodeView, nearest) <- interp.touchedNodeViews)
+      // cut out features TODO: do this in the interpreter (Kanguk Lee)
+      val NodeView(node, rawView) = rawNodeView
+      val view: View = rawView.flatMap {
+        case (rawEnclosing, feature, path) =>
+          val rawStack = feature :: rawEnclosing
+          val featureStack = rawStack.take(fsTrie((rawStack).map(_.func.name)))
+          if featureStack.isEmpty then None
+          else Some((featureStack.tail, featureStack.head, path))
+      }
+      val nodeView = NodeView(node, view)
       touchedNodeViews += nodeView -> nearest
       getScript(nodeView) match
         case None =>
@@ -318,7 +333,17 @@ case class Coverage(
         case Some(blockScript) => blockingScripts += blockScript
 
     // update branch coverage
-    for ((condView, nearest) <- interp.touchedCondViews)
+    for ((rawCondView, nearest) <- interp.touchedCondViews)
+      // cut out features TODO: do this in the interpreter (Kanguk Lee)
+      val CondView(cond, rawView) = rawCondView
+      val view: View = rawView.flatMap {
+        case (rawEnclosing, feature, path) =>
+          val rawStack = feature :: rawEnclosing
+          val featureStack = rawStack.take(fsTrie((rawStack).map(_.func.name)))
+          if featureStack.isEmpty then None
+          else Some((featureStack.tail, featureStack.head, path))
+      }
+      val condView: CondView = CondView(cond, view)
       touchedCondViews += condView -> nearest
       getScript(condView) match
         case None =>
