@@ -110,8 +110,9 @@ class FSTrieWrapper(
       root.updateStatus()
 
   def apply(stack: List[String]): Int =
-    if fixed then fixedSensMap.getOrElseUpdate(stack, root(stack))
-    else root(stack)
+    val tmpStack = stack.take(config.maxSensitivity)
+    if fixed then fixedSensMap.getOrElseUpdate(tmpStack, root(tmpStack))
+    else root(tmpStack)
 
   given fSTrieEncoder: Encoder[FSTrie] = deriveEncoder
   given fsTrieDecoder: Decoder[FSTrie] = deriveDecoder

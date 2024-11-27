@@ -287,6 +287,7 @@ case class Coverage(
     // TODO: impl checkWithBlocking using `blockingScripts`
     (finalSt, updated, covered, blockingScripts, kickedScripts)
 
+  // not updating fstrie
   def checkWithBlockings(
     script: Script,
     interp: Interp,
@@ -791,7 +792,7 @@ object Coverage {
         val code = readFile(minimal.getPath).drop(USE_STRICT.length).strip
         try {
           val script = Script(code, name)
-          cov.runAndCheck(script)
+          cov.runAndCheckWithBlocking(script)
         } catch {
           case e =>
             println(f"Error in $name%-12s: $e  :  $code")
