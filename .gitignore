@@ -42,3 +42,7 @@ tests/result/test262
 .zshrc
 
 minify-test/
+node_modules
+exp_data/
+tmp/
+triejson/
