@@ -20,8 +20,12 @@ class TracerInjector(using cfg: CFG) extends Walker {
   }
 
   def apply(code: String) =
-    val ast = cfg.scriptParser.from(code)
-    walk(ast).toString(grammar = Some(grammar))
+    try {
+      val ast = cfg.scriptParser.from(code)
+      walk(ast).toString(grammar = Some(grammar))
+    } catch {
+      case e: Exception => throw new Exception(s"Error parsing code: $code", e)
+    }
 
   def counterStmt: String = s"$TRACER_SYMBOL($counter);"
 

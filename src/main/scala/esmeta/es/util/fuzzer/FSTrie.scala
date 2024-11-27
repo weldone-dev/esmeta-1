@@ -7,11 +7,11 @@ import io.circe.*, io.circe.syntax.*, io.circe.generic.semiauto.*
 import esmeta.util.SystemUtils.*
 
 object FSTrieWrapper:
-  def fromDir(baseDir: String): FSTrieWrapper =
+  def fromDir(baseDir: String, fixed: Boolean): FSTrieWrapper =
     given fsTrieConfigDecoder: Decoder[FSTrieConfig] = deriveDecoder
     val config = readJson[FSTrieConfig](f"$baseDir/fstrie-config.json")
-    val fsTrieWrapper = FSTrieWrapper(config)
-    fsTrieWrapper.replaceRootFromJson(f"$baseDir/fstrie-root.json")
+    val fsTrieWrapper = FSTrieWrapper(config, fixed = fixed)
+    fsTrieWrapper.replaceRootFromFile(f"$baseDir/fstrie-root.json")
     fsTrieWrapper
 
   def debug: Unit =
@@ -54,6 +54,7 @@ object FSTrieWrapper:
 class FSTrieWrapper(
   val config: FSTrieConfig,
   val debug: Boolean = false,
+  val fixed: Boolean = false,
 ) {
   var root: FSTrie = FSTrie(status = FSTrieStatus.Noticed)
 
@@ -68,17 +69,14 @@ class FSTrieWrapper(
     val score = chiSquaredTest(hits, misses, absentHits, absentMisses)
     assert(
       score >= 0,
-      f"Score for rootHits: $rootHits, rootMisses: $rootMisses, hits: $hits, misses: $misses is negative: $score",
+      f"Score for rootHits: $pHits, rootMisses: $pMisses, hits: $hits, misses: $misses is negative: $score",
     )
     assert(
       score.isFinite,
-      f"Score for rootHits: $rootHits, rootMisses: $rootMisses, hits: $hits, misses: $misses is not finite: $score",
+      f"Score for rootHits: $pHits, rootMisses: $pMisses, hits: $hits, misses: $misses is not finite: $score",
     )
     if (hits + misses < config.minTouch) 0 else score
   }
-
-  private var rootHits: Long = 0
-  private var rootMisses: Long = 0
 
   /** Insert feature stacks from a single script into the trie. The script
     * succeeded to invoke some non-trivial minifier operations. Increment the
@@ -88,16 +86,12 @@ class FSTrieWrapper(
     *   the feature stacks generated from the successful script
     */
   def touchWithHit(stacks: Iterable[List[String]]): Unit =
-    rootHits += stacks.size
     stacks.foreach { s =>
       root.touchByStack(s.take(config.maxSensitivity), isHit = true)
     }
-    assert(
-      root.hits == rootHits && root.misses == rootMisses,
-      f"Root hits: $rootHits, root misses: $rootMisses, hits: ${root.hits}, misses: ${root.misses}",
-    )
-    root.writeback()
-    root.updateStatus()
+    if !fixed then
+      root.writeback()
+      root.updateStatus()
 
   /** Insert feature stacks from a single script into the trie. The script
     * failed to invoke some non-trivial minifier operations. Increment the
@@ -107,16 +101,12 @@ class FSTrieWrapper(
     *   the feature stacks generated from the failed script
     */
   def touchWithMiss(stacks: Iterable[List[String]]): Unit =
-    rootMisses += stacks.size
     stacks.foreach { s =>
       root.touchByStack(s.take(config.maxSensitivity), isHit = false)
     }
-    assert(
-      root.hits == rootHits && root.misses == rootMisses,
-      f"Root hits: $rootHits, root misses: $rootMisses, hits: ${root.hits}, misses: ${root.misses}",
-    )
-    root.writeback()
-    root.updateStatus()
+    if !fixed then
+      root.writeback()
+      root.updateStatus()
 
   def apply(stack: List[String]): Int = root(stack)
 
@@ -125,7 +115,7 @@ class FSTrieWrapper(
   given fsTrieConfigEncoder: Encoder[FSTrieConfig] = deriveEncoder
   given fsTrieConfigDecoder: Decoder[FSTrieConfig] = deriveDecoder
 
-  def replaceRootFromJson(filename: String): Unit =
+  def replaceRootFromFile(filename: String): Unit =
     root = readJson[FSTrie](filename)
 
   def stacks: Set[List[String]] = root.stacks

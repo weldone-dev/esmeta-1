@@ -242,7 +242,7 @@ class MinifyFuzzer(
                     )
                     false
           }).fold(true)(_ && _)
-        case _ => false
+        case _ => true
       if (!passed) {
         bugCount += 1
       }

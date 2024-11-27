@@ -17,7 +17,7 @@ case object FSTrieStats extends Phase[Unit, Unit] {
 
   def apply(unit: Unit, cmdConfig: CommandConfig, config: Config): Unit =
     val baseDir = getFirstFilename(cmdConfig, "trie-statistics")
-    val trie = FSTrieWrapper.fromDir(baseDir)
+    val trie = FSTrieWrapper.fromDir(baseDir, fixed = true)
     val stacks = trie.stacks
     val stacksWithScores = trie.stacksWithScores
     val stats = stacksWithScores.toList.sortBy(_._2).groupBy(_._1.size)

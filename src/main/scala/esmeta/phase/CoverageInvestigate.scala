@@ -7,6 +7,7 @@ import esmeta.CommandConfig
 import esmeta.util.*
 import esmeta.util.BaseUtils.*
 import esmeta.es.util.USE_STRICT
+import esmeta.es.util.fuzzer.MinifierDB
 import esmeta.es.Script
 import scala.util.*
 import java.util.concurrent.atomic.AtomicLong
@@ -21,20 +22,31 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
     import esmeta.ty.util.JsonProtocol.given
     given ConInvDataEncoder: Encoder[CovInvData] = deriveEncoder
 
-    val cov_dir = getFirstFilename(cmdConfig, "coverage-investigate")
-    val new_js_dir = getSecondFilename(cmdConfig, "coverage-investigate")
+    val covDir = getFirstFilename(cmdConfig, "coverage-investigate")
 
-    val cov = Coverage.fromLogSimpl(cov_dir, cfg)
+    val cov = Coverage.fromLogSimpl(covDir, cfg)
     println(
-      s"Coverage restored from $cov_dir (${cov.kFs}-F${if cov.cp then "CP"
+      s"Coverage restored from $covDir (${cov.kFs}-F${if cov.cp then "CP"
       else ""}S)",
     )
 
+    val minimals = if config.useDB then
+      val db = MinifierDB.fromResource
+      for {
+        (label, minimals) <- db.map
+        minimal <- minimals
+      } yield Script(minimal, label)
+    else
+      val newJsDir = getSecondFilename(cmdConfig, "coverage-investigate")
+      for {
+        jsFile <- listFiles(newJsDir)
+        name = jsFile.getName
+        if jsFilter(name)
+        code = readFile(jsFile.getPath).drop(USE_STRICT.length).strip
+      } yield Script(code, name)
+
     val res = (for {
-      jsFile <- listFiles(new_js_dir)
-      name = jsFile.getName
-      code = readFile(jsFile.getPath).drop(USE_STRICT.length).strip
-      script = Script(code, name)
+      script <- minimals.toList
     } yield {
       try
         cov.runAndCheckWithBlocking(script) match
@@ -86,10 +98,16 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
       StrOption((c, s) => c.out = Some(s)),
       "output json file path.",
     ),
+    (
+      "use-db",
+      BoolOption(c => c.useDB = true),
+      "use resources/minifyfuzz-db minimals.",
+    ),
   )
 
   class Config(
     var out: Option[String] = None,
+    var useDB: Boolean = false,
   )
 }
 
