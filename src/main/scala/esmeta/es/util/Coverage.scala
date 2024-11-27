@@ -748,6 +748,7 @@ object Coverage {
       demCrit = fsTrieConfig.demotionCriteria,
     )
     cov.fsTrie.replaceRootFromFile(f"$baseDir/fstrie-root.json")
+    cov.fsTrie.fixed = true
 
     println("coverage initialized")
 

@@ -54,7 +54,7 @@ object FSTrieWrapper:
 class FSTrieWrapper(
   val config: FSTrieConfig,
   val debug: Boolean = false,
-  val fixed: Boolean = false,
+  var fixed: Boolean = false,
 ) {
   var root: FSTrie = FSTrie(status = FSTrieStatus.Noticed)
 
@@ -86,10 +86,10 @@ class FSTrieWrapper(
     *   the feature stacks generated from the successful script
     */
   def touchWithHit(stacks: Iterable[List[String]]): Unit =
-    stacks.foreach { s =>
-      root.touchByStack(s.take(config.maxSensitivity), isHit = true)
-    }
     if !fixed then
+      stacks.foreach { s =>
+        root.touchByStack(s.take(config.maxSensitivity), isHit = true)
+      }
       root.writeback()
       root.updateStatus()
 
@@ -101,10 +101,10 @@ class FSTrieWrapper(
     *   the feature stacks generated from the failed script
     */
   def touchWithMiss(stacks: Iterable[List[String]]): Unit =
-    stacks.foreach { s =>
-      root.touchByStack(s.take(config.maxSensitivity), isHit = false)
-    }
     if !fixed then
+      stacks.foreach { s =>
+        root.touchByStack(s.take(config.maxSensitivity), isHit = false)
+      }
       root.writeback()
       root.updateStatus()
 

@@ -30,7 +30,7 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
       else ""}S)",
     )
 
-    val minimals = if config.useDB then
+    val targets = if config.useDB then
       val db = MinifierDB.fromResource
       for {
         (label, minimals) <- db.map
@@ -46,7 +46,7 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
       } yield Script(code, name)
 
     val res = (for {
-      script <- minimals.toList
+      script <- targets.toList
     } yield {
       try
         cov.runAndCheckWithBlocking(script) match
@@ -60,7 +60,8 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
               ) =>
             Some(
               CovInvData(
-                name,
+                script.name,
+                script.code,
                 covered,
                 blockings.map(_.code),
                 coveredNode.map(_.toString),
@@ -69,19 +70,25 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
             )
       catch
         case e: Throwable =>
-          println(s"Error in $name : ${e.getMessage}")
+          println(s"Error in ${script.name}: ${e.getMessage}")
           // e.printStackTrace()
           None
     }).flatten.sortBy(_._2)
 
-    val count = res.count(_.covered)
-    println(s"$count out of ${res.length} survived")
-
     res.foreach {
-      case CovInvData(name, covered, blockings, coveredNode, coveredBranch) => {
+      case CovInvData(
+            name,
+            code,
+            covered,
+            blockings,
+            coveredNode,
+            coveredBranch,
+          ) => {
         println(f"$name%30s: ${if (covered) "alive" else "dead"}")
       }
     }
+
+    println(f"Total: ${res.size}%d, alive: ${res.count(_.covered)}%d")
 
     for (filename <- config.out)
       dumpJson(
@@ -113,6 +120,7 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
 
 sealed case class CovInvData(
   name: String,
+  code: String,
   covered: Boolean,
   blockings: Set[String],
   coveredNode: Set[String],
