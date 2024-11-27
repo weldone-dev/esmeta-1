@@ -199,7 +199,7 @@ class MinifyFuzzer(
     var bugCount = 0
     for (
       minimal <- ProgressBar(
-        "reconstructing coverage",
+        "delta-debugging minimals",
         minimals,
         getName = (x, _) => x.name,
         detail = false,

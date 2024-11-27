@@ -56,6 +56,7 @@ class FSTrieWrapper(
   val debug: Boolean = false,
   var fixed: Boolean = false,
 ) {
+  val fixedSensMap = MMap.empty[List[String], Int]
   var root: FSTrie = FSTrie(status = FSTrieStatus.Noticed)
 
   private def scoringFunction(
@@ -108,7 +109,9 @@ class FSTrieWrapper(
       root.writeback()
       root.updateStatus()
 
-  def apply(stack: List[String]): Int = root(stack)
+  def apply(stack: List[String]): Int =
+    if fixed then fixedSensMap.getOrElseUpdate(stack, root(stack))
+    else root(stack)
 
   given fSTrieEncoder: Encoder[FSTrie] = deriveEncoder
   given fsTrieDecoder: Decoder[FSTrie] = deriveDecoder
