@@ -7,11 +7,12 @@ import esmeta.CommandConfig
 import esmeta.util.*
 import esmeta.util.BaseUtils.*
 import esmeta.es.util.USE_STRICT
-import esmeta.es.util.fuzzer.MinifierDB
+import esmeta.es.util.fuzzer.{MinifierDB, MinifyChecker}
 import esmeta.es.Script
 import scala.util.*
 import java.util.concurrent.atomic.AtomicLong
 import esmeta.util.SystemUtils.*
+import scala.collection.parallel.CollectionConverters._
 import io.circe.*, io.circe.syntax.*, io.circe.generic.semiauto.*
 
 case object CoverageInvestigate extends Phase[CFG, Unit] {
@@ -20,82 +21,134 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
 
   def apply(cfg: CFG, cmdConfig: CommandConfig, config: Config): Unit =
     import esmeta.ty.util.JsonProtocol.given
-    given ConInvDataEncoder: Encoder[CovInvData] = deriveEncoder
 
-    val covDir = getFirstFilename(cmdConfig, "coverage-investigate")
-
-    val cov = Coverage.fromLogSimpl(covDir, cfg)
-    println(
-      s"Coverage restored from $covDir (${cov.kFs}-F${if cov.cp then "CP"
-      else ""}S)",
-    )
-
-    val targets = if config.useDB then
-      val db = MinifierDB.fromResource
-      for {
-        (label, minimals) <- db.map
-        minimal <- minimals
-      } yield Script(minimal, label)
-    else
-      val newJsDir = getSecondFilename(cmdConfig, "coverage-investigate")
-      for {
-        jsFile <- listFiles(newJsDir)
-        name = jsFile.getName
-        if jsFilter(name)
-        code = readFile(jsFile.getPath).drop(USE_STRICT.length).strip
-      } yield Script(code, name)
-
-    val res = (for {
-      script <- targets.toList
-    } yield {
-      try
-        cov.runAndCheckWithBlocking(script) match
-          case (
-                finalSt,
-                updated,
-                covered,
-                blockings,
-                coveredNode,
-                coveredBranch,
-              ) =>
-            Some(
-              CovInvData(
-                script.name,
-                script.code,
-                covered,
-                blockings.map(_.code),
-                coveredNode.map(_.toString),
-                coveredBranch.map(_.toString),
-              ),
-            )
-      catch
-        case e: Throwable =>
-          println(s"Error in ${script.name}: ${e.getMessage}")
-          // e.printStackTrace()
-          None
-    }).flatten.sortBy(_._2)
-
-    res.foreach {
-      case CovInvData(
+    config.checkJson match
+      case Some(filename) =>
+        given CovInvDataDecoder: Decoder[CovInvData] = deriveDecoder
+        given CovInvBugDataEncoder: Encoder[CovInvBugData] = deriveEncoder
+        val swcMinifyChecker =
+          MinifyChecker(cfg.spec, MinifyChecker.swcMinifyFunction)
+        val data = readJson[List[CovInvData]](filename)
+        var res = List.empty[CovInvBugData]
+        println(s"Checking ${data.size} scripts")
+        for (
+          covInvData <- ProgressBar(
+            "Checking",
+            data,
+            getName = (x, _) => x.name,
+            detail = false,
+            concurrent = ConcurrentPolicy.Auto,
+          )
+        ) {
+          val CovInvData(
             name,
             code,
             covered,
             blockings,
             coveredNode,
             coveredBranch,
-          ) => {
-        println(f"$name%30s: ${if (covered) "alive" else "dead"}")
-      }
-    }
+          ) = covInvData
+          println(s"Checking $name")
+          val strictCode = USE_STRICT + code
+          val blockingsWithBug = blockings.filter { blocking =>
+            swcMinifyChecker.check(strictCode).map(_.diff).getOrElse(false)
+          }
+          val blockingWithoutBug = blockings -- blockingsWithBug
+          res ::= CovInvBugData(
+            name,
+            code,
+            covered,
+            blockingsWithBug,
+            blockingWithoutBug,
+            coveredNode,
+            coveredBranch,
+          )
+        }
+        res = res.sortBy(_.blockingsWithBug.size).sortBy(_.covered)
 
-    println(f"Total: ${res.size}%d, alive: ${res.count(_.covered)}%d")
+        for (filename <- config.out)
+          dumpJson(
+            data = res,
+            filename = filename,
+          )
+        ()
+      case None =>
+        given ConInvDataEncoder: Encoder[CovInvData] = deriveEncoder
 
-    for (filename <- config.out)
-      dumpJson(
-        data = res,
-        filename = filename,
-      )
-    ()
+        val covDir = getFirstFilename(cmdConfig, "coverage-investigate")
+
+        val cov = Coverage.fromLogSimpl(covDir, cfg)
+        println(
+          s"Coverage restored from $covDir (${cov.kFs}-F${if cov.cp then "CP"
+          else ""}S)",
+        )
+
+        val targets = if config.useDB then
+          val db = MinifierDB.fromResource
+          for {
+            (label, minimals) <- db.map
+            minimal <- minimals
+          } yield Script(minimal, label)
+        else
+          val newJsDir = getSecondFilename(cmdConfig, "coverage-investigate")
+          for {
+            jsFile <- listFiles(newJsDir)
+            name = jsFile.getName
+            if jsFilter(name)
+            code = readFile(jsFile.getPath).drop(USE_STRICT.length).strip
+          } yield Script(code, name)
+
+        val res = (for {
+          script <- targets.toList
+        } yield {
+          try
+            cov.runAndCheckWithBlocking(script) match
+              case (
+                    finalSt,
+                    updated,
+                    covered,
+                    blockings,
+                    coveredNode,
+                    coveredBranch,
+                  ) =>
+                Some(
+                  CovInvData(
+                    script.name,
+                    script.code,
+                    covered,
+                    blockings.map(_.code),
+                    coveredNode.map(_.toString),
+                    coveredBranch.map(_.toString),
+                  ),
+                )
+          catch
+            case e: Throwable =>
+              println(s"Error in ${script.name}: ${e.getMessage}")
+              // e.printStackTrace()
+              None
+        }).flatten.sortBy(_._2)
+
+        res.foreach {
+          case CovInvData(
+                name,
+                code,
+                covered,
+                blockings,
+                coveredNode,
+                coveredBranch,
+              ) => {
+            println(f"$name%30s: ${if (covered) "alive" else "dead"}")
+          }
+        }
+
+        println(f"Total: ${res.size}%d, alive: ${res.count(_.covered)}%d")
+
+        for (filename <- config.out)
+          dumpJson(
+            data = res,
+            filename = filename,
+          )
+        ()
 
   val defaultConfig: Config = Config()
 
@@ -110,11 +163,17 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
       BoolOption(c => c.useDB = true),
       "use resources/minifyfuzz-db minimals.",
     ),
+    (
+      "check-json",
+      StrOption((c, s) => c.checkJson = Some(s)),
+      "check the json file.",
+    ),
   )
 
   class Config(
     var out: Option[String] = None,
     var useDB: Boolean = false,
+    var checkJson: Option[String] = None,
   )
 }
 
@@ -123,6 +182,16 @@ sealed case class CovInvData(
   code: String,
   covered: Boolean,
   blockings: Set[String],
+  coveredNode: Set[String],
+  coveredBranch: Set[String],
+)
+
+sealed case class CovInvBugData(
+  name: String,
+  code: String,
+  covered: Boolean,
+  blockingsWithBug: Set[String],
+  blockingWithoutBug: Set[String],
   coveredNode: Set[String],
   coveredBranch: Set[String],
 )
