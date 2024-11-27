@@ -548,18 +548,25 @@ object Coverage {
     val con: CoverageConstructor = readJsonHere("constructor.json")
     val cov = new Coverage(cfg, con.kFs, con.cp, con.timeLimit)
 
-    for {
-      minimal <- listFiles(s"$baseDir/minimal")
-      name = minimal.getName
-      code = readFile(minimal.getPath).drop(USE_STRICT.length).strip
-      script = Script(code, name)
-    } {
-      try {
-        cov.runAndCheck(script)
-      } catch {
-        case e =>
-          println(f"Error in $name%-12s: $e  :  $code")
-      }
+    for (
+      minimal <- ProgressBar(
+        "reconstructing coverage",
+        listFiles(s"$baseDir/minimal"),
+        getName = (x, _) => x.getName(),
+        detail = false,
+        concurrent = ConcurrentPolicy.Auto,
+      )
+    ) {
+      val name = minimal.getName
+      if jsFilter(name) then
+        val code = readFile(minimal.getPath).drop(USE_STRICT.length).strip
+        try {
+          val script = Script(code, name)
+          cov.runAndCheck(script)
+        } catch {
+          case e =>
+            println(f"Error in $name%-12s: $e  :  $code")
+        }
     }
 
     cov
