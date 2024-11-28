@@ -95,6 +95,7 @@ case object CmdBuildCFG extends Command("build-cfg", CmdCompile >> BuildCFG) {
   val examples = List(
     "esmeta build-cfg                          # build CFG for spec.",
     "esmeta build-cfg -extract:target=es2022   # build CFG for es2022 spec.",
+    "esmeta build-cfg -build-cfg:trace         # link spec step to CFG nodes.",
   )
 }
 

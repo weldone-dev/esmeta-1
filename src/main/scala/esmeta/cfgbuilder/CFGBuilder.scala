@@ -4,6 +4,11 @@ import esmeta.util.BaseUtils.*
 import esmeta.cfg.*
 import esmeta.ir.{Func => IRFunc, *}
 import esmeta.ir.util.AllocSiteSetter
+import esmeta.util.Loc
+import esmeta.util.SystemUtils.getPrintWriter
+import esmeta.{CFG_LOG_DIR}
+import java.io.PrintWriter
+import scala.collection.mutable
 import scala.collection.mutable.{ListBuffer, Map => MMap}
 
 /** CFG builder */
@@ -11,21 +16,26 @@ object CFGBuilder:
   def apply(
     program: Program,
     log: Boolean = false,
+    trace: Boolean = false,
   ): CFG = new CFGBuilder(program).result
 
 /** extensible helper of CFG builder */
 class CFGBuilder(
   program: Program,
   log: Boolean = false,
+  trace: Boolean = false,
 ) {
 
   /** final result */
   lazy val result: CFG =
     asiteSetter.walk(program)
     for { f <- program.funcs } translate(f)
+    if (trace) pw.flush(); pw.close()
     val cfg = CFG(funcs.toList)
     cfg.program = program
     cfg
+
+  private val pw: PrintWriter = getPrintWriter(s"$CFG_LOG_DIR/trace-log")
 
   /** translate IR function to cfg function */
   def translate(irFunc: IRFunc): Unit = {
@@ -89,10 +99,40 @@ class CFGBuilder(
         prev = List((call, true))
     }
     aux(body)
-
     val entry = if (dummyEntry.id == -1) Block(nextNId) else dummyEntry
     val func = Func(nextFId, irFunc, entry)
     funcs += func
+
+    if (trace) {
+      pw.println(s"[${irFunc.name}]")
+
+      val stepsToNodeMap: mutable.Map[String, Node] = mutable.Map()
+
+      def addToStepsToNodeMap(steps: String, node: Node): Unit = {
+        if (!stepsToNodeMap.contains(steps)) {
+          stepsToNodeMap += (steps -> node)
+        }
+      }
+
+      for (node <- func.nodes.toList.sorted) {
+        node match
+          case block: Block =>
+            block.insts.head.langOpt.flatMap(_.loc) match
+              case Some(loc) => addToStepsToNodeMap(loc.stepString, node)
+              case None      =>
+          //                println(s"No step exist for ${node}")
+          case node: NodeWithInst =>
+            node.inst.flatMap(_.langOpt).flatMap(_.loc) match
+              case Some(loc) => addToStepsToNodeMap(loc.stepString, node)
+              case None      =>
+        //              println(s"No step exist for ${node}")
+      }
+
+      stepsToNodeMap.keys.toList.sorted.foreach { key =>
+        val node = stepsToNodeMap(key)
+        pw.println(s"Step ${key} : $node")
+      }
+    }
   }
 
   /** allocation site setter */
