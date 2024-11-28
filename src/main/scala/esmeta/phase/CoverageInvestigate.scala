@@ -63,7 +63,19 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
             coveredBranch,
           )
         }
-        res = res.sortBy(_.blockingsWithBug.size).sortBy(_.covered)
+        res =
+          res.sortBy(_.blockingsWithBug.size).sortBy(_.covered).sortBy(_.name)
+
+        res.groupBy(_.name).foreach {
+          case (name, covInvBugData) =>
+            println(
+              s"name: $name\n" +
+              s"\ttotal: ${covInvBugData.size}\n" +
+              s"\talive: ${covInvBugData.count(_.covered)}\n" +
+              s"\tdead by bug: ${covInvBugData.count(_.blockingsWithBug.nonEmpty)}\n" +
+              s"\tdead by no bug: ${covInvBugData.count(_.blockingsWithBug.isEmpty)}",
+            )
+        }
 
         for (filename <- config.out)
           dumpJson(
