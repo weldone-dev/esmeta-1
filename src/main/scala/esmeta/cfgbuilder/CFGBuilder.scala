@@ -5,10 +5,9 @@ import esmeta.cfg.*
 import esmeta.ir.{Func => IRFunc, *}
 import esmeta.ir.util.AllocSiteSetter
 import esmeta.util.Loc
-import esmeta.util.SystemUtils.getPrintWriter
-import esmeta.{CFG_LOG_DIR}
-import java.io.PrintWriter
-import scala.collection.mutable
+import esmeta.util.SystemUtils.getPrintWriter // !debug
+import java.io.PrintWriter // !debug
+import esmeta.{CFG_LOG_DIR} // !debug
 import scala.collection.mutable.{ListBuffer, Map => MMap}
 
 /** CFG builder */
@@ -25,17 +24,23 @@ class CFGBuilder(
   log: Boolean = false,
   trace: Boolean = false,
 ) {
+  private val pw: PrintWriter = getPrintWriter(
+    s"$CFG_LOG_DIR/trace-log",
+  ) // !debug
+
+  private val specMap: MMap[(String, String), Node] = MMap()
 
   /** final result */
   lazy val result: CFG =
     asiteSetter.walk(program)
     for { f <- program.funcs } translate(f)
-    if (trace) pw.flush(); pw.close()
+    if (trace) // !debug
+      for { ((f, s), n) <- specMap } do
+        pw.println(s"$f : step $s -> ${n.name}"); pw.flush()
+      pw.close()
     val cfg = CFG(funcs.toList)
     cfg.program = program
     cfg
-
-  private val pw: PrintWriter = getPrintWriter(s"$CFG_LOG_DIR/trace-log")
 
   /** translate IR function to cfg function */
   def translate(irFunc: IRFunc): Unit = {
@@ -103,36 +108,20 @@ class CFGBuilder(
     val func = Func(nextFId, irFunc, entry)
     funcs += func
 
-    if (trace) {
-      pw.println(s"[${irFunc.name}]")
-
-      val stepsToNodeMap: mutable.Map[String, Node] = mutable.Map()
-
-      def addToStepsToNodeMap(steps: String, node: Node): Unit = {
-        if (!stepsToNodeMap.contains(steps)) {
-          stepsToNodeMap += (steps -> node)
-        }
-      }
-
-      for (node <- func.nodes.toList.sorted) {
-        node match
-          case block: Block =>
-            block.insts.head.langOpt.flatMap(_.loc) match
-              case Some(loc) => addToStepsToNodeMap(loc.stepString, node)
-              case None      =>
-          //                println(s"No step exist for ${node}")
+    if (trace)
+      for { node <- func.nodes } do
+        val repr = node match
+          case Block(_, insts, _) => insts.head.langOpt
           case node: NodeWithInst =>
-            node.inst.flatMap(_.langOpt).flatMap(_.loc) match
-              case Some(loc) => addToStepsToNodeMap(loc.stepString, node)
-              case None      =>
-        //              println(s"No step exist for ${node}")
-      }
-
-      stepsToNodeMap.keys.toList.sorted.foreach { key =>
-        val node = stepsToNodeMap(key)
-        pw.println(s"Step ${key} : $node")
-      }
-    }
+            node.inst match
+              case Some(inst) => inst.langOpt
+              case None       => None
+        for {
+          lang <- repr
+          loc <- lang.loc
+          key = (irFunc.name, loc.stepString)
+          if !specMap.contains(key)
+        } do specMap += (key -> node)
   }
 
   /** allocation site setter */
