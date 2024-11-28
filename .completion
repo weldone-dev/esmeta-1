@@ -25,7 +25,7 @@ _esmeta_completions() {
   injectOpt="-inject:body -inject:defs -inject:out -inject:log"
   mutateOpt="-mutate:out -mutate:mutator -mutate:untilValid"
   fuzzOpt="-fuzz:log -fuzz:log-interval -fuzz:out -fuzz:debug -fuzz:timeout -fuzz:trial -fuzz:duration -fuzz:seed -fuzz:cp -fuzz:k-fs -fuzz:init"
-  coverageinvestigateOpt="-coverage-investigate:out -coverage-investigate:use-db"
+  coverageinvestigateOpt="-coverage-investigate:out -coverage-investigate:use-db -coverage-investigate:check-bug"
   minifycheckOpt="-minify-check:out"
   testminimalsOpt="-test-minimals:out -test-minimals:eval-time-limit -test-minimals:inject-time-limit -test-minimals:test-time-limit"
   fstriestatsOpt="-fstrie-stats:out"
