@@ -73,9 +73,10 @@ case class Coverage(
 
   def runAndCheckWithBlocking(
     script: Script,
+    modify: Boolean = true,
   ): (State, Boolean, Boolean, Set[Script], Set[NodeView], Set[CondView]) = {
     val interp = run(script.code)
-    this.synchronized(checkWithBlocking(script, interp))
+    this.synchronized(checkWithBlocking(script, interp, modify))
   }
 
   /** evaluate a given ECMAScript program */
@@ -140,6 +141,7 @@ case class Coverage(
   def checkWithBlocking(
     script: Script,
     interp: Interp,
+    modify: Boolean,
   ): (State, Boolean, Boolean, Set[Script], Set[NodeView], Set[CondView]) =
     val Script(code, _) = script
     val initSt = cfg.init.from(code)
@@ -159,10 +161,11 @@ case class Coverage(
       touchedNodeViews += nodeView -> nearest
       getScript(nodeView) match
         case None =>
-          update(nodeView, script); coveredNodeViews += nodeView;
+          if modify then
+            update(nodeView, script); coveredNodeViews += nodeView;
           updated = true; covered = true
         case Some(originalScript) if originalScript.code.length > code.length =>
-          update(nodeView, script)
+          if modify then update(nodeView, script)
           updated = true
           blockingScripts += originalScript
         case Some(blockScript) => blockingScripts += blockScript
@@ -172,10 +175,11 @@ case class Coverage(
       touchedCondViews += condView -> nearest
       getScript(condView) match
         case None =>
-          update(condView, nearest, script); coveredCondViews += condView;
+          if modify then
+            update(condView, nearest, script); coveredCondViews += condView;
           updated = true; covered = true
         case Some(origScript) if origScript.code.length > code.length =>
-          update(condView, nearest, script)
+          if modify then update(condView, nearest, script)
           updated = true
           blockingScripts += origScript
         case Some(blockScript) => blockingScripts += blockScript

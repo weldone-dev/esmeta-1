@@ -50,7 +50,7 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
       script <- targets.toList
     } yield {
       try
-        cov.runAndCheckWithBlocking(script) match
+        cov.runAndCheckWithBlocking(script, modify = false) match
           case (
                 finalSt,
                 updated,
