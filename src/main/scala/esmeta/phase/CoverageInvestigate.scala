@@ -107,7 +107,18 @@ case object CoverageInvestigate extends Phase[CFG, Unit] {
             name = jsFile.getName
             if jsFilter(name)
             code = readFile(jsFile.getPath).drop(USE_STRICT.length).strip
-          } yield Script(code, name)
+          } yield
+            val beginning = "const k = ( ( ) => { "
+            val end = " } ) ( ) ;"
+            val innerCode =
+              code
+                .replaceAll("\"use strict\"\\s*;?", "")
+                .trim()
+                .substring(beginning.length)
+                .trim()
+                .dropRight(end.length)
+            println(innerCode)
+            Script(innerCode, name)
 
         val res = (for {
           script <- targets.toList

@@ -789,6 +789,7 @@ object Coverage {
         getName = (x, _) => x.getName(),
         detail = false,
         concurrent = ConcurrentPolicy.Auto,
+        timeLimit = Some(10),
       )
     ) {
       val name = minimal.getName
