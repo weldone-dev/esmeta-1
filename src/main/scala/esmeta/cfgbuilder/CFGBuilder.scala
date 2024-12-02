@@ -35,8 +35,9 @@ class CFGBuilder(
     asiteSetter.walk(program)
     for { f <- program.funcs } translate(f)
     if (trace) // !debug
-      for { ((f, s), n) <- specMap } do
-        pw.println(s"$f : step $s -> ${n.name}"); pw.flush()
+      for { ((f, s), n) <- specMap.toSeq.sortBy(_._1) }
+        pw.println(s"$f : step $s -> ${n.name}")
+      pw.flush()
       pw.close()
     val cfg = CFG(funcs.toList)
     cfg.program = program
@@ -120,8 +121,12 @@ class CFGBuilder(
           lang <- repr
           loc <- lang.loc
           key = (irFunc.name, loc.stepString)
-          if !specMap.contains(key)
-        } do specMap += (key -> node)
+        }
+          specMap.get(key) match
+            case Some(origin) =>
+              if (origin.id > node.id) specMap += (key -> node)
+            case None => specMap += (key -> node)
+
   }
 
   /** allocation site setter */
