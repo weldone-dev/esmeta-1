@@ -95,7 +95,6 @@ case object CmdBuildCFG extends Command("build-cfg", CmdCompile >> BuildCFG) {
   val examples = List(
     "esmeta build-cfg                          # build CFG for spec.",
     "esmeta build-cfg -extract:target=es2022   # build CFG for es2022 spec.",
-    "esmeta build-cfg -build-cfg:trace         # link spec step to CFG nodes.",
   )
 }
 
@@ -181,5 +180,17 @@ case object CmdMutate extends Command("mutate", CmdBuildCFG >> Mutate) {
     "esmeta mutate a.js                           # mutate ECMAScript program.",
     "esmeta mutate a.js -mutate:out=b.js          # dump the mutated program.",
     "esmeta mutate a.js -mutate:mutator=random    # use random mutator.",
+  )
+}
+
+// -----------------------------------------------------------------------------
+// Collector for ECMAScript Visualizer
+// -----------------------------------------------------------------------------
+/** `collect` command */
+case object CmdCollect extends Command("collect", CmdBuildCFG >> Collect) {
+  val help = "collects information for ECMAScript visualizer."
+  val examples = List(
+    "esmeta collect                                # collect information.",
+    "esmeta collect -collect:log                   # dump the collected information.",
   )
 }

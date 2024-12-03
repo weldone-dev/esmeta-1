@@ -4,10 +4,6 @@ import esmeta.util.BaseUtils.*
 import esmeta.cfg.*
 import esmeta.ir.{Func => IRFunc, *}
 import esmeta.ir.util.AllocSiteSetter
-import esmeta.util.Loc
-import esmeta.util.SystemUtils.getPrintWriter // !debug
-import java.io.PrintWriter // !debug
-import esmeta.{CFG_LOG_DIR} // !debug
 import scala.collection.mutable.{ListBuffer, Map => MMap}
 
 /** CFG builder */
@@ -15,30 +11,18 @@ object CFGBuilder:
   def apply(
     program: Program,
     log: Boolean = false,
-    trace: Boolean = false,
   ): CFG = new CFGBuilder(program).result
 
 /** extensible helper of CFG builder */
 class CFGBuilder(
   program: Program,
   log: Boolean = false,
-  trace: Boolean = false,
 ) {
-  private val pw: PrintWriter = getPrintWriter(
-    s"$CFG_LOG_DIR/trace-log",
-  ) // !debug
-
-  private val specMap: MMap[(String, String), Node] = MMap()
 
   /** final result */
   lazy val result: CFG =
     asiteSetter.walk(program)
     for { f <- program.funcs } translate(f)
-    if (trace) // !debug
-      for { ((f, s), n) <- specMap.toSeq.sortBy(_._1) }
-        pw.println(s"$f : step $s -> ${n.name}")
-      pw.flush()
-      pw.close()
     val cfg = CFG(funcs.toList)
     cfg.program = program
     cfg
@@ -108,25 +92,6 @@ class CFGBuilder(
     val entry = if (dummyEntry.id == -1) Block(nextNId) else dummyEntry
     val func = Func(nextFId, irFunc, entry)
     funcs += func
-
-    if (trace)
-      for { node <- func.nodes } do
-        val repr = node match
-          case Block(_, insts, _) => insts.head.langOpt
-          case node: NodeWithInst =>
-            node.inst match
-              case Some(inst) => inst.langOpt
-              case None       => None
-        for {
-          lang <- repr
-          loc <- lang.loc
-          key = (irFunc.name, loc.stepString)
-        }
-          specMap.get(key) match
-            case Some(origin) =>
-              if (origin.id > node.id) specMap += (key -> node)
-            case None => specMap += (key -> node)
-
   }
 
   /** allocation site setter */

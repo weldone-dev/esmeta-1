@@ -78,6 +78,8 @@ object ESMeta extends Git(BASE_DIR) {
     // ECMAScript Transformer
     CmdInject,
     CmdMutate,
+    // Collector for ECMAScript Visualizer
+    CmdCollect,
   )
   val cmdMap = commands.foldLeft[Map[String, Command[_]]](Map()) {
     case (map, cmd) => map + (cmd.name -> cmd)
@@ -101,6 +103,8 @@ object ESMeta extends Git(BASE_DIR) {
     // ECMAScript Transformer
     Inject,
     Mutate,
+    // Collector for ECMAScript Visualizer
+    Collect,
   )
 
   /** command options */

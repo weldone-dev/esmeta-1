@@ -18,7 +18,7 @@ case object BuildCFG extends Phase[Program, CFG] {
     config: Config,
   ): CFG = {
     // build cfg
-    val builder = new CFGBuilder(program, config.log, config.trace)
+    val builder = new CFGBuilder(program, config.log)
     val cfg = builder.result
 
     // logging mode
@@ -53,16 +53,10 @@ case object BuildCFG extends Phase[Program, CFG] {
       BoolOption((c, b) => { c.dot ||= b; c.pdf = b }),
       "dump the cfg in DOT and PDF formats.",
     ),
-    (
-      "trace",
-      BoolOption(_.trace = _),
-      "link step to CFG node.",
-    ),
   )
   case class Config(
     var log: Boolean = false,
     var dot: Boolean = false,
     var pdf: Boolean = false,
-    var trace: Boolean = false,
   )
 }
