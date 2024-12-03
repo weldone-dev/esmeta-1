@@ -11,7 +11,7 @@ import scala.collection.mutable.{Map => MMap}
 
 class Collector(cfg: CFG, log: Boolean = false) {
   def run: Unit = {
-    val specMap: MMap[(String, String), Node] = MMap()
+    val specMap: MMap[(String, String), Int] = MMap()
 
     for { func <- cfg.funcs; node <- func.nodes } do
       val repr = node match
@@ -21,20 +21,18 @@ class Collector(cfg: CFG, log: Boolean = false) {
             case Some(inst) => inst.langOpt
             case None       => None
       for { lang <- repr; loc <- lang.loc } do
-        val key = (func.irFunc.name, loc.stepString)
-        specMap.get(key) match
-          case Some(origin) =>
-            if (origin.id > node.id) specMap += (key -> node)
-          case None => specMap += (key -> node)
+        val k = (func.irFunc.name, loc.stepString)
+        val v = specMap.get(k) match
+          case Some(prev) => prev min node.id
+          case None       => node.id
+        specMap += (k -> v)
 
     if (log)
       val pw: PrintWriter = getPrintWriter(s"$COLLECT_LOG_DIR/log")
-      for { ((f, s), n) <- specMap.toSeq.sortBy(_._1) } do
-        pw.println(s"$f : step $s -> ${n.name}")
+      for {
+        ((f, s), nid) <- specMap.toSeq.sortBy(_._1)
+      } do pw.println(s"$f : step $s -> ${nid}")
       pw.flush()
       pw.close()
-
-    for { ((f, s), n) <- specMap.toSeq.sortBy(_._1) } do // !debug
-      println(s"$f : step $s -> ${n.name}")
   }
 }

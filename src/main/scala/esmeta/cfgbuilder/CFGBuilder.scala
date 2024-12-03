@@ -89,6 +89,7 @@ class CFGBuilder(
         prev = List((call, true))
     }
     aux(body)
+
     val entry = if (dummyEntry.id == -1) Block(nextNId) else dummyEntry
     val func = Func(nextFId, irFunc, entry)
     funcs += func
