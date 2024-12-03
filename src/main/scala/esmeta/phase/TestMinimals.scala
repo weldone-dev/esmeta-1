@@ -66,6 +66,17 @@ case object TestMinimals extends Phase[CFG, Unit] {
 
     println(s"Total: $totalCount, Bugs: $bugCount")
     println(s"Bug rate: ${bugCount.toDouble / totalCount * 100}%")
+    if config.out.isDefined then
+      val out = config.out.get
+      val json = Json.obj(
+        "total" -> totalCount.asJson,
+        "bugs" -> bugCount.asJson,
+        "bugRate" -> (bugCount.toDouble / totalCount * 100).asJson,
+      )
+      dumpJson(
+        json,
+        out,
+      )
 
   val defaultConfig: Config = Config()
 
