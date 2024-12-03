@@ -197,6 +197,7 @@ class MinifyFuzzer(
 
   def testMinimal(minimals: List[Script], baseLogDir: String): Int =
     var bugCount = 0
+    var minimalIter = 0
     for (
       minimal <- ProgressBar(
         "delta-debugging minimals",
@@ -206,6 +207,7 @@ class MinifyFuzzer(
         concurrent = ConcurrentPolicy.Auto,
       )
     ) {
+      minimalIter += 1
       val code = minimal.code
       val name = minimal.name
       val state =
@@ -243,7 +245,7 @@ class MinifyFuzzer(
                   case None | Some(_: AssertionSuccess) => true
                   case Some(result) =>
                     log(
-                      MinifyFuzzResult(-1, false, original, result),
+                      MinifyFuzzResult(minimalIter, false, original, result),
                       baseLogDir,
                     )
                     false

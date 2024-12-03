@@ -54,7 +54,7 @@ case object TestMinimals extends Phase[CFG, Unit] {
     }
     val totalCount = scriptList.size
 
-    val baseLogDir = s"$baseDir/minimal/logs"
+    val baseLogDir = s"$baseDir/minimal/delta"
     mkdir(baseLogDir)
 
     val minifyFuzzer =
