@@ -1188,6 +1188,9 @@ trait AbsTransferDecl { analyzer: TyChecker =>
       expectedTys: Set[ValueTy],
     )(using np: NodePoint[Node]): Unit =
       if (!expectedTys.exists(ty => lhsTy <= ty || rhsTy <= ty))
+        // println(s"lhsTy: $lhsTy, rhsTy: $rhsTy, expectedTys: $expectedTys")
+        // println(s"${lhsTy.math} <= Math: ${lhsTy.math <= MathTy.Top}, ${rhsTy.math} <= Math: ${rhsTy.math <= MathTy.Top}")
+        // throw new Exception("Type mismatch")
         val binaryPoint = BinaryOpPoint(np, binary)
         addError(BinaryOpTypeMismatch(binaryPoint, lhsTy, rhsTy))
 
