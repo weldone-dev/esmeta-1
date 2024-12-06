@@ -1189,16 +1189,16 @@ class Compiler(
       if (check) IAssert(ETypeCheck(xExpr, IRType(CompT)))
       else IAssert(ETypeCheck(xExpr, IRType(NormalT))),
     )
-    // if (!immediateReturn) // XXX: not to optimize for now
-    fb.addInst(
-      if (check)
-        IIf(
-          ETypeCheck(xExpr, IRType(AbruptT)),
-          IReturn(xExpr),
-          IAssign(x, ERef(Field(x, EStr("Value")))),
-        )
-      else IAssign(x, ERef(Field(x, EStr("Value")))),
-    )
+    if (!immediateReturn)
+      fb.addInst(
+        if (check)
+          IIf(
+            ETypeCheck(xExpr, IRType(AbruptT)),
+            IReturn(xExpr),
+            IAssign(x, ERef(Field(x, EStr("Value")))),
+          )
+        else IAssign(x, ERef(Field(x, EStr("Value")))),
+      )
     xExpr
   val simpleOps: Map[String, SimpleOp] = Map(
     arityCheck("ParseText" -> {
