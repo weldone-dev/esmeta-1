@@ -20,6 +20,7 @@ class TracerInjector(using cfg: CFG) extends Walker {
   }
 
   def apply(code: String) =
+    _counter = 0
     try {
       val ast = cfg.scriptParser.from(code)
       walk(ast).toString(grammar = Some(grammar))
