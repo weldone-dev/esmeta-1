@@ -1180,7 +1180,7 @@ class Compiler(
     fb: FuncBuilder,
     expr: Expr,
     check: Boolean,
-    imeediateReturn: Boolean = false,
+    immediateReturn: Boolean = false,
   ): Expr =
     val (x, xExpr) = expr match
       case ERef(local: Local) => (local, expr)
@@ -1189,16 +1189,16 @@ class Compiler(
       if (check) IAssert(ETypeCheck(xExpr, IRType(CompT)))
       else IAssert(ETypeCheck(xExpr, IRType(NormalT))),
     )
-    if (!imeediateReturn)
-      fb.addInst(
-        if (check)
-          IIf(
-            ETypeCheck(xExpr, IRType(AbruptT)),
-            IReturn(xExpr),
-            IAssign(x, ERef(Field(x, EStr("Value")))),
-          )
-        else IAssign(x, ERef(Field(x, EStr("Value")))),
-      )
+    // if (!immediateReturn) // XXX: not to optimize for now
+    fb.addInst(
+      if (check)
+        IIf(
+          ETypeCheck(xExpr, IRType(AbruptT)),
+          IReturn(xExpr),
+          IAssign(x, ERef(Field(x, EStr("Value")))),
+        )
+      else IAssign(x, ERef(Field(x, EStr("Value")))),
+    )
     xExpr
   val simpleOps: Map[String, SimpleOp] = Map(
     arityCheck("ParseText" -> {
