@@ -147,12 +147,12 @@ import org.scalajs.linker.interface.ModuleInitializer
 import org.scalajs.linker.interface.ModuleSplitStyle
 import org.scalajs.linker.interface.ModuleKind
 
-lazy val worker = (project in file("worker"))
-  .aggregate(root)
-  .dependsOn(root)
+lazy val workerJS = (project in file("worker"))
+  .aggregate(esmeta)
+  .dependsOn(esmeta)
   .enablePlugins(ScalaJSPlugin)
   .settings(
-    name := "esmeta-worker",
+    name := "esmeta-worker-js",
     scalaVersion := "3.3.3",
     scalacOptions ++= Seq("-encoding", "utf-8", "-deprecation", "-feature"),
 
@@ -174,19 +174,21 @@ lazy val worker = (project in file("worker"))
   )
 
 // project root
-lazy val root = project
+lazy val esmeta = project
   .in(file("."))
+  .enablePlugins(ScalaJSPlugin)
   .settings(
     name := "esmeta",
 
     // libraries
     libraryDependencies ++= Seq(
-      // "org.typelevel" %% "cats-effect" % "3.5.7",
-      "io.circe" %% "circe-core" % "0.14.1",
-      "io.circe" %% "circe-generic" % "0.14.1",
-      "io.circe" %% "circe-parser" % "0.14.1",
+      "org.typelevel" %% "cats-effect" % "3.5.7",
+      "io.circe" %%% "circe-core" % "0.14.5",
+      "io.circe" %%% "circe-generic" % "0.14.5",
+      "io.circe" %%% "circe-parser" % "0.14.5",
       "org.scalatest" %% "scalatest" % "3.2.11" % Test,
       "org.apache.commons" % "commons-text" % "1.9",
+      
       "org.jsoup" % "jsoup" % "1.14.3",
       // "org.jline" % "jline" % "3.13.3",
       ("org.scala-lang.modules" %% "scala-parser-combinators" % "1.1.2")
